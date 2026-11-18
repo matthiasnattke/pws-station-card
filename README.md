@@ -26,14 +26,15 @@ The sensors need a `state_class` (e.g. `measurement`) so that long-term statisti
 | `entity` | all but `range` | Sensor to show. For `header`: the outdoor temperature |
 | `name` | instruments | Title (default: friendly name) |
 | `unit`, `decimals` | instruments | Override unit / decimal places |
-| `min`, `max`, `ticks`, `colors` | `dial`, `thermo`, `rain` | Scale. `ticks` are numbers or `{v: 3, l: '3'}` |
-| `stats` | `dial`, `thermo` | Columns of the table: any of `max`, `min`, `mean` (default `[max, min]`) |
+| `min`, `max` | `dial`, `thermo`, `rain` | Scale (thermo default −20 … 40, rain default 0 … 50) |
+| `ticks`, `colors` | `dial` | Scale marks (numbers or `{v: 3, l: '3'}`) and the colours of the arc, from low to high |
+| `stats` | `dial`, `thermo` | Rows of the statistics below the instrument: any of `max`, `min`, `mean` (default `[max, min]`) |
 | `stat_entity` | `rain` | Total-rain sensor (`total_increasing`) for monthly / yearly sums (required for `rain`) |
 | `speed_entity`, `mode: speed`, `calm` | `rose` | Wind speed for the rose; `mode: speed` shows average speed per direction |
 | `mode` | `chart` | `line` (default, min/mean/max), `bar` (sums), `dots` (e.g. wind direction) |
 | `series` | `chart` | Custom series: `[{stat: max, label: Gusts, color: '#1f6fb8', entity: sensor.gust}]` |
 | `ymin`, `ymax` | `chart` | Fixed y axis |
-| `theme` | instruments | `dark` (default follows HA), `light` |
+| `theme` | instruments | Colours follow your Home Assistant theme; `dark` or `light` forces a fixed palette |
 | `title`, `location` | `header` | Big title and small subtitle |
 | `feels`, `humidity`, `wind`, `wind_dir`, `rain_today`, `rain_rate`, `pressure` | `header` | Optional sensors for the header line and chips |
 | `prefix` | `header` | Entity-ID prefix of the station, used for the *live / last update* indicator |
