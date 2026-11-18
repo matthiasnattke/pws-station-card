@@ -1,0 +1,561 @@
+/* Weather Station Card – instruments and history charts for a personal weather station (Ecowitt, Netatmo, …)
+   Variants: header, range, dial, thermo, rain, compass, rose, chart
+   Also defines zambretti-forecast-card: a short-term forecast from local pressure and its 3-hour trend.
+   MIT License – see LICENSE */
+const WSC_VERSION = '1.0.0';
+const pol = (cx, cy, r, deg) => { const a = deg * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+const f = (n) => Number(n).toFixed(2);
+const arc = (cx, cy, r, a0, a1) => { const [x0, y0] = pol(cx, cy, r, a0), [x1, y1] = pol(cx, cy, r, a1); return `M${f(x0)},${f(y0)}A${r},${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${f(x1)},${f(y1)}`; };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const WSC_LANG = (h) => { const l = ((h && ((h.locale && h.locale.language) || h.language)) || 'en').slice(0, 2); return l === 'de' ? 'de' : 'en'; };
+const WSC_I18N = {
+  en: {
+    dirs: ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'],
+    comp: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'],
+    range: { day: 'Day', week: 'Week', month: 'Month', year: 'Year' },
+    clock: '', now: 'Live · just updated', secs: (s) => `Live · updated ${s} s ago`, mins: (live, m) => `${live ? 'Live' : 'No new data'} · updated ${m} min ago`,
+    feels: (v) => `feels like ${v}°`, hum: (v) => `${v} % humidity`, wind: (v, d) => `💨 ${v} km/h${d ? ' from ' + d : ''}`, rain: (v) => `☔ ${v} mm today`, press: (v) => `⏲ ${v} hPa`,
+    pond: { full: '🐟 Pond filled', drain: '🎣 Pond is being drained', fill: (p) => `💧 Pond is filling · ${p} %`, empty: (m) => `🌾 Pond drained · filling from ${m}` },
+    stat: { max: '▲ Max', min: '▼ Min', mean: 'Ø Mean', sum: '+ Total' }, rows: ['Daily', 'Monthly', 'Yearly'],
+    loading: 'Loading …', nodata: 'No data in this period', calm: 'Calm', calmAll: 'Calm during the whole period',
+    strongest: (d, v, u) => `Strongest wind from ${d} (Ø ${v} ${u})`, main: (d, p) => `Main direction ${d} (${p} %)`,
+    hours: ['24 h', '3 days', '7 days'], notenough: 'Not enough data for a chart',
+    sum: 'Total', avg: 'Average', min: 'Min', max: 'Max',
+  },
+  de: {
+    dirs: ['N', 'NNO', 'NO', 'ONO', 'O', 'OSO', 'SO', 'SSO', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'],
+    comp: ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'],
+    range: { day: 'Tag', week: 'Woche', month: 'Monat', year: 'Jahr' },
+    clock: ' Uhr', now: 'Live · gerade aktualisiert', secs: (s) => `Live · aktualisiert vor ${s} s`, mins: (live, m) => `${live ? 'Live' : 'Keine neuen Daten'} · aktualisiert vor ${m} min`,
+    feels: (v) => `gefühlt ${v}°`, hum: (v) => `${v} % Feuchte`, wind: (v, d) => `💨 ${v} km/h${d ? ' aus ' + d : ''}`, rain: (v) => `☔ ${v} mm heute`, press: (v) => `⏲ ${v} hPa`,
+    pond: { full: '🐟 Teich gefüllt', drain: '🎣 Abfischen · Teich wird abgelassen', fill: (p) => `💧 Teich wird gefüllt · ${p} %`, empty: (m) => `🌾 Teich abgelassen · Füllung ab ${m}` },
+    stat: { max: '▲ Max', min: '▼ Min', mean: 'Ø Mittel', sum: '+ Gesamt' }, rows: ['Täglich', 'Monatlich', 'Jährlich'],
+    loading: 'Lade …', nodata: 'Keine Daten im Zeitraum', calm: 'Windstill', calmAll: 'Windstill im gesamten Zeitraum',
+    strongest: (d, v, u) => `Stärkster Wind aus ${d} (Ø ${v} ${u})`, main: (d, p) => `Hauptrichtung ${d} (${p} %)`,
+    hours: ['24 h', '3 Tage', '7 Tage'], notenough: 'Nicht genügend Daten für die Grafik',
+    sum: 'Summe', avg: 'Durchschn.', min: 'Min', max: 'Max',
+  },
+};
+const VARIANTS = ['header', 'range', 'dial', 'thermo', 'rain', 'compass', 'rose', 'chart'];
+const NOENTITY = ['header', 'range'];
+const BLUES = ['#d8f6fd', '#a5ecfa', '#6fdcf5', '#3bb4d6', '#2a7f9e'];
+const RANGES = { day: { h: 24, p: '5minute', bar: 'hour' }, week: { h: 168, p: 'hour', bar: 'day' }, month: { h: 720, p: 'day', bar: 'day' }, year: { h: 8760, p: 'day', bar: 'month' } };
+const getRange = () => { try { const r = localStorage.getItem('weather-station-card-range'); return RANGES[r] ? r : 'day'; } catch (e) { return 'day'; } };
+const VARS = 'ha-card{--wb:#14181c;--wt:#f1f3f5;--w2:#cfd4d9;--w3:#9aa3ab;--wg:#59616a;--wh:#3a4047}ha-card.day{--wb:#fff;--wt:#4d5258;--w2:#8d9399;--w3:#8d9399;--wg:#d3d8dc;--wh:#ebedef}';
+const TH = (s) => s.replace(/#14181c/g, 'var(--wb)').replace(/#(f1f3f5|e6e9ec)/g, 'var(--wt)').replace(/#cfd4d9/g, 'var(--w2)').replace(/#(9aa3ab|8b949c)/g, 'var(--w3)').replace(/#59616a/g, 'var(--wg)').replace(/#3a4047/g, 'var(--wh)');
+const CSS = `
+:host{display:block}
+ha-card{display:block;background:#14181c;color:#f1f3f5;border:none;border-radius:14px;padding:14px 10px 16px;
+  font-family:Roboto,'Helvetica Neue',Arial,sans-serif;box-sizing:border-box;height:100%;cursor:pointer;overflow:hidden}
+ha-card.day{box-shadow:0 0 0 1px #e2e5e8}
+ha-card.header{cursor:default;padding:0;position:relative;min-height:176px;color:#fff;background:#14181c}
+.sky{position:absolute;top:0;left:0;width:100%;height:100%;max-width:none}
+.hx{position:relative;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 20px 0;text-shadow:0 1px 5px rgba(0,0,0,.5)}
+.hr{text-align:right}.ht{font-size:56px;font-weight:200;line-height:1;white-space:nowrap}.hf{font-size:13px;margin-top:4px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#43d17a;animation:lv 1.8s infinite}.dot.off{background:#9aa3ab;animation:none}
+@keyframes lv{0%{box-shadow:0 0 0 0 rgba(67,209,122,.75)}100%{box-shadow:0 0 0 9px rgba(67,209,122,0)}}
+.ch{position:relative;display:flex;flex-wrap:wrap;gap:6px;padding:26px 20px 14px}
+.ch span{font-size:12.5px;background:rgba(0,0,0,.36);border-radius:99px;padding:4px 10px;white-space:nowrap}
+.header .nav{position:relative;padding:0 20px 12px}
+.cl{animation:cl 90s linear infinite}@keyframes cl{from{transform:translateX(-170px)}to{transform:translateX(640px)}}
+.tw{animation:tw 3s ease-in-out infinite}@keyframes tw{50%{opacity:.3}}
+.rn{animation:rn .8s linear infinite}@keyframes rn{from{transform:translate(0,-20px)}to{transform:translate(-40px,150px)}}
+.wv{animation:wv 6s ease-in-out infinite alternate}@keyframes wv{from{transform:translateX(-10px)}to{transform:translateX(10px)}}
+.rd{animation:rd 5s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 100%}@keyframes rd{from{transform:rotate(-2.5deg)}to{transform:rotate(2.5deg)}}
+.fj{animation:fj 17s ease-in-out infinite;transform-box:fill-box;transform-origin:center;opacity:0}@keyframes fj{0%,86%{opacity:0;transform:translate(0,22px) rotate(-50deg)}88%{opacity:1}93%{transform:translate(18px,-18px) rotate(0deg);opacity:1}98%{opacity:1}100%{transform:translate(36px,22px) rotate(55deg);opacity:0}}
+ha-card.range{cursor:default;padding:8px 12px}
+ha-card.chart{padding:14px 14px 10px}
+.t{font-size:22px;font-weight:300;text-align:center;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chart .t{text-align:left}
+.g{display:flex;justify-content:center}
+svg{width:100%;max-width:230px;height:auto;display:block}
+svg.c{max-width:none}
+table{margin:12px auto 0;border-collapse:separate;border-spacing:4px 3px;font-size:12px}
+td{text-align:center;font-weight:700;min-width:50px;padding:2px 3px;white-space:nowrap}
+.p{display:inline-block;border-radius:5px;color:#fff;padding:3px 8px;font-weight:700;font-size:11px;white-space:nowrap}
+.mx{background:#c62828}.mn{background:#42a5f5}.sm{background:#26b6d0}.av{background:#f2b632;color:#1c1c1c}
+td.r{background:#3a4047;border-radius:5px;font-weight:400;padding:3px 8px}
+.s{text-align:center;font-size:13px;color:#cfd4d9;margin-top:10px}
+.b{display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-top:10px}
+.range .b{margin:0}
+button,a.l{font:inherit;font-size:13px;border:none;border-radius:6px;padding:6px 12px;background:transparent;color:#f1f3f5;cursor:pointer;text-decoration:none;white-space:nowrap}
+button.on,a.l.on{background:#3d8bd0;color:#fff}
+button:hover,a.l:hover{background:#3a4047}
+button.on:hover,a.l.on:hover{background:#3d8bd0}
+.hn{font-size:30px;font-weight:300;line-height:1.15}
+.hl{font-size:15px;margin-top:3px}
+.hu{font-size:12px;margin-top:8px;display:flex;align-items:center;gap:7px}
+.nav{display:flex;flex-wrap:wrap;gap:4px}
+.k{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 12px;font-size:13px;font-weight:700;margin:2px 0 6px;min-height:20px}
+.k .p{border-radius:10px;margin-right:4px;color:#10141a}
+.lg{display:flex;justify-content:center;gap:14px;font-size:12px;color:#cfd4d9;margin-top:2px}
+.lg i{display:inline-block;width:11px;height:11px;margin-right:5px;vertical-align:-1px}
+`;
+
+class WeatherStationCard extends HTMLElement {
+  static getStubConfig() { return { variant: 'dial', entity: '' }; }
+  setConfig(c) {
+    if (!c || !VARIANTS.includes(c.variant)) throw new Error('variant must be one of ' + VARIANTS.join(', '));
+    if (!NOENTITY.includes(c.variant) && !c.entity) throw new Error('entity is required');
+    if (c.variant === 'rain' && !c.stat_entity) throw new Error('stat_entity is required for the rain variant');
+    this._c = c; this._stats = null; this._bins = null; this._chart = null; this._sig = null; this._last = 0; this._roseH = c.hours || 24;
+    if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+  }
+  get _t() { return WSC_I18N[WSC_LANG(this._hass)]; }
+  get _loc() { return (this._hass && this._hass.locale && this._hass.locale.language) || (this._hass && this._hass.language) || 'en'; }
+
+  set hass(h) {
+    this._hass = h;
+    if (!this._c) return;
+    const v = this._c.variant, now = Date.now();
+    if (!['header', 'range', 'compass'].includes(v) && now - this._last > 300000) { this._last = now; this._load(); }
+    const st = this._c.entity && h.states[this._c.entity];
+    const sig = v === 'chart' || v === 'range' ? v + WSC_LANG(h) : v === 'header' ? (() => { const P = this._pond(); return [this._phase(), this._raining(), this._frost(), P.st, Math.round(P.L * 25), new Date().getMonth(), WSC_LANG(h)].join('|'); })() : st ? st.state + WSC_LANG(h) : 'x';
+    const day = v !== 'header' && (this._c.theme === 'light' || (this._c.theme !== 'dark' && !(h.themes && h.themes.darkMode)));
+    if (sig !== this._sig || day !== this._day) { this._sig = sig; this._day = day; this._render(); }
+    if (v === 'header') this._hdrUpd();
+  }
+
+  connectedCallback() {
+    if (!this._c) return;
+    if (this._c.variant === 'header') this._tm = setInterval(() => this._hdrUpd(), 5000);
+    if (this._c.variant === 'chart' || this._c.variant === 'range') {
+      this._onRange = () => { if (this._c.variant === 'chart') { this._chart = null; this._last = Date.now(); this._load(); } this._render(); };
+      window.addEventListener('weather-station-card-range', this._onRange);
+    }
+  }
+  disconnectedCallback() { clearInterval(this._tm); if (this._onRange) window.removeEventListener('weather-station-card-range', this._onRange); }
+  getCardSize() { return NOENTITY.includes(this._c.variant) ? 2 : 6; }
+  getGridOptions() {
+    const v = this._c.variant;
+    if (NOENTITY.includes(v)) return { columns: 'full', rows: 'auto' };
+    if (v === 'chart') return { columns: 18, rows: 'auto', min_columns: 12 };
+    return { columns: 12, rows: 'auto', min_columns: 6 };
+  }
+
+  async _load() {
+    const c = this._c, h = this._hass;
+    try {
+      if (c.variant === 'rose') await this._loadRose();
+      else if (c.variant === 'chart') await this._loadChart();
+      else if (c.variant === 'rain') {
+        const id = c.stat_entity, now = new Date();
+        const tot = await Promise.all(['month', 'year'].map((p) => h.callWS({ type: 'recorder/statistic_during_period', statistic_id: id, calendar: { period: p }, types: ['change'] })));
+        const y0 = new Date(now.getFullYear(), 0, 1), m0 = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const d = await h.callWS({ type: 'recorder/statistics_during_period', start_time: y0.toISOString(), statistic_ids: [id], period: 'day', types: ['change'] });
+        const rows = (d && d[id]) || [];
+        const mx = (a) => (a.length ? Math.max(...a.map((x) => x.change || 0)) : 0);
+        this._stats = { month: tot[0].change, year: tot[1].change, maxMonth: mx(rows.filter((x) => x.start >= m0)), maxYear: mx(rows) };
+      } else {
+        const id = c.stat_entity || c.entity;
+        this._stats = await Promise.all(['day', 'month', 'year'].map((p) => h.callWS({ type: 'recorder/statistic_during_period', statistic_id: id, calendar: { period: p }, types: ['max', 'min', 'mean'] })));
+      }
+    } catch (e) { console.warn('weather-station-card', c.entity, e); }
+    this._render();
+  }
+
+  async _loadRose() {
+    const c = this._c, hrs = this._roseH, ids = [c.entity].concat(c.speed_entity ? [c.speed_entity] : []);
+    const d = await this._hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(Date.now() - hrs * 3600e3).toISOString(), statistic_ids: ids, period: '5minute', types: ['mean'] });
+    const dir = (d && d[c.entity]) || [], sp = new Map(((d && d[c.speed_entity]) || []).map((x) => [x.start, x.mean]));
+    const n = new Array(16).fill(0), sum = new Array(16).fill(0); let calm = 0, tot = 0;
+    dir.forEach((x) => {
+      if (x.mean == null) return;
+      const s = sp.get(x.start); tot++;
+      if (c.speed_entity && (s == null || s < (c.calm != null ? c.calm : 0.5))) { calm++; return; }
+      const i = Math.round(x.mean / 22.5) % 16; n[i]++; sum[i] += s || 0;
+    });
+    if (hrs === this._roseH) this._bins = { tot, calm: tot ? calm / tot : 0, share: n.map((x) => (tot ? x / tot : 0)), speed: n.map((x, i) => (x ? sum[i] / x : 0)) };
+  }
+
+  _series() {
+    const c = this._c, T = this._t;
+    if (c.series) return c.series;
+    if (c.mode === 'bar') return [{ stat: 'change', label: T.sum, color: '#4db8ff' }];
+    if (c.mode === 'dots') return [{ stat: 'mean', label: T.avg, color: '#4db8ff' }];
+    const col = c.colors || ['#f28b82', '#e53935', '#8e2424'];
+    return [{ stat: 'min', label: T.min, color: col[0] }, { stat: 'mean', label: T.avg, color: col[1] }, { stat: 'max', label: T.max, color: col[2] }];
+  }
+
+  async _loadChart() {
+    const c = this._c, rk = getRange(), R = RANGES[rk], series = this._series();
+    const ids = [...new Set(series.map((s) => s.entity || c.entity))], t0 = Date.now() - R.h * 3600e3;
+    const d = await this._hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(t0).toISOString(), statistic_ids: ids, period: c.mode === 'bar' ? R.bar : R.p, types: c.mode === 'bar' ? ['change'] : ['min', 'mean', 'max'] });
+    if (rk === getRange()) this._chart = { rk, d: d || {}, t0, t1: Date.now() };
+  }
+
+  _render() {
+    if (!this._hass || !this._c || !this.shadowRoot) return;
+    const c = this._c, st = c.entity ? this._hass.states[c.entity] : null, T = this._t;
+    const unit = c.unit != null ? c.unit : (st && st.attributes.unit_of_measurement) || '';
+    const name = c.name || (st && st.attributes.friendly_name) || '';
+    let body;
+    if (c.variant === 'header') body = this._header();
+    else if (c.variant === 'range') { const rk = getRange(); body = `<div class="b">${Object.keys(RANGES).map((k) => `<button data-r="${k}" class="${k === rk ? 'on' : ''}">${T.range[k]}</button>`).join('')}</div>`; }
+    else if (c.variant === 'chart') body = `<div class="t">${name}${unit ? ` (${unit})` : ''}</div>${this._chartBody(unit)}`;
+    else {
+      const v = st ? parseFloat(st.state) : NaN, dec = c.decimals != null ? c.decimals : 1, val = isNaN(v) ? '–' : v.toLocaleString(this._loc, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      body = `<div class="t">${name}</div><div class="g">${this['_' + c.variant](v, val, unit)}</div>${this._table(v, unit, dec)}`;
+    }
+    this.shadowRoot.innerHTML = `<style>${VARS}${TH(CSS)}</style><ha-card class="${c.variant}${this._day ? ' day' : ''}">${c.variant === 'header' ? body : TH(body)}</ha-card>`;
+    if (c.variant === 'header') this._hdrUpd();
+    const card = this.shadowRoot.querySelector('ha-card');
+    if (!NOENTITY.includes(c.variant)) card.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: c.entity }, bubbles: true, composed: true })));
+    this.shadowRoot.querySelectorAll('button[data-h]').forEach((b) => b.addEventListener('click', (ev) => {
+      ev.stopPropagation(); this._roseH = Number(b.dataset.h); this._bins = null; this._render();
+      this._loadRose().then(() => this._render()).catch((e) => console.warn('weather-station-card', e));
+    }));
+    this.shadowRoot.querySelectorAll('button[data-r]').forEach((b) => b.addEventListener('click', () => {
+      try { localStorage.setItem('weather-station-card-range', b.dataset.r); } catch (e) { /* no storage: selection is not kept */ }
+      window.dispatchEvent(new Event('weather-station-card-range'));
+    }));
+    this.shadowRoot.querySelectorAll('a[data-p]').forEach((a) => a.addEventListener('click', (ev) => {
+      ev.preventDefault(); history.pushState(null, '', a.dataset.p);
+      window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
+    }));
+  }
+
+  _phase() {
+    const s = this._hass.states['sun.sun']; if (!s) return 'day';
+    const el = Number(s.attributes && s.attributes.elevation);
+    return !isNaN(el) ? (el < -6 ? 'night' : el < 6 ? 'dusk' : 'day') : s.state === 'below_horizon' ? 'night' : 'day';
+  }
+  _raining() { const s = this._c.rain_rate && this._hass.states[this._c.rain_rate]; return !!s && Number(s.state) > 0; }
+  _frost() { const s = this._c.entity && this._hass.states[this._c.entity]; const v = s ? Number(s.state) : NaN; return !isNaN(v) && v <= 0; }
+  // Optional seasonal pond (e.g. fish ponds that are drained every autumn). Without `pond:` the water is always full.
+  _pond() {
+    const cfg = this._c.pond; if (!cfg) return { st: 'none', L: 1, label: '' };
+    const c = typeof cfg === 'object' ? cfg : {}, P = this._t.pond, now = new Date(), y = now.getFullYear();
+    const D = (s, d) => { const m = String(s || d).split('-').map(Number); return new Date(y, m[0] - 1, m[1]).getTime(); };
+    const fs = D(c.fill_start, '03-01'), fl = D(c.full, '04-15'), dr = D(c.drain, '10-25'), em = D(c.empty, '11-01'), t = now.getTime();
+    if (t >= fl && t < dr) return { st: 'full', L: 1, label: P.full };
+    if (t >= dr && t < em) { const q = (t - dr) / (em - dr); return { st: 'drain', L: 0.35 * (1 - q) + 0.04, label: P.drain }; }
+    if (t >= fs && t < fl) { const L = 0.08 + 0.92 * (t - fs) / (fl - fs); return { st: 'fill', L, label: P.fill(Math.round(L * 100)) }; }
+    return { st: 'empty', L: 0, label: P.empty(new Date(fs).toLocaleDateString(this._loc, { month: 'long' })) };
+  }
+  _hdrUpd() {
+    const r = this.shadowRoot, h = this._hass, c = this._c, T = this._t, loc = this._loc; if (!r || !h) return;
+    const set = (id, t) => { const e = r.getElementById(id); if (e && e.textContent !== t) e.textContent = t; };
+    set('h-time', new Date().toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' }) + T.clock);
+    if (!this._ids) { const pre = c.prefix || (c.entity.split('_')[0] + '_'); this._ids = Object.keys(h.states).filter((k) => k.startsWith(pre)); }
+    let nw = 0; this._ids.forEach((k) => { const s = h.states[k]; if (s) { const t = new Date(s.last_reported || s.last_updated).getTime(); if (t > nw) nw = t; } });
+    const sec = Math.max(0, Math.round((Date.now() - nw) / 1000)), live = nw > 0 && sec < 300;
+    set('h-upd', !nw ? '' : sec < 10 ? T.now : sec < 90 ? T.secs(sec) : T.mins(live, Math.round(sec / 60)));
+    const dot = r.getElementById('h-dot'); if (dot) dot.className = 'dot' + (live ? '' : ' off');
+    const n = (e, d) => { const s = e && h.states[e]; const v = s ? Number(s.state) : NaN; return isNaN(v) ? null : v.toLocaleString(loc, { minimumFractionDigits: d, maximumFractionDigits: d }); };
+    const t = n(c.entity, 1); set('h-t', t == null ? '–' : t + '°');
+    const parts = [], fe = n(c.feels, 1), hu = n(c.humidity, 0);
+    if (fe != null) parts.push(T.feels(fe)); if (hu != null) parts.push(T.hum(hu)); set('h-f', parts.join(' · '));
+    const ch = [], w = n(c.wind, 1), rt = n(c.rain_today, 1), p = n(c.pressure, 0);
+    if (w != null) { const wd = c.wind_dir && h.states[c.wind_dir] ? Number(h.states[c.wind_dir].state) : NaN; ch.push(T.wind(w, isNaN(wd) ? '' : T.dirs[Math.round(wd / 22.5) % 16])); }
+    if (rt != null) ch.push(T.rain(rt)); if (p != null) ch.push(T.press(p));
+    const pl = this._pond().label; if (pl) ch.push(pl);
+    const cc = r.getElementById('h-ch'); if (cc) { const html = ch.map((x) => `<span>${x}</span>`).join(''); if (cc.innerHTML !== html) cc.innerHTML = html; }
+  }
+
+  _header() {
+    const c = this._c, ph = this._phase(), rain = this._raining();
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+    const sky = rain && ph === 'day' ? ['#56677a', '#a9b6c3'] : ph === 'day' ? ['#2f7fd6', '#bfe1fb'] : ph === 'dusk' ? ['#27345f', '#f2a65a'] : ['#060a1c', '#1d2c52'];
+    const wat = ph === 'night' ? ['#1a2c56', '#080f22'] : ph === 'dusk' ? ['#c98a5e', '#343a66'] : rain ? ['#8496a6', '#4f5f70'] : ['#86c5f0', '#2a6fb0'];
+    const shore = ph === 'night' ? '#0a142b' : ph === 'dusk' ? '#232c4d' : rain ? '#3f5a4a' : '#3f7d4e';
+    let s = `<defs><linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky[0]}"/><stop offset="1" stop-color="${sky[1]}"/></linearGradient><linearGradient id="wa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${wat[0]}"/><stop offset="1" stop-color="${wat[1]}"/></linearGradient><radialGradient id="sg"><stop offset="0" stop-color="rgba(255,230,140,.75)"/><stop offset="1" stop-color="rgba(255,230,140,0)"/></radialGradient></defs><rect width="600" height="200" fill="url(#sk)"/>`;
+    if (ph === 'night') { for (let k = 0; k < 46; k++) s += `<circle cx="${(k * 137 + 31) % 600}" cy="${(k * 53 + 7) % 118}" r="${(0.5 + (k % 4) * 0.28).toFixed(2)}" fill="#fff" class="tw" style="animation-delay:${((k * 0.37) % 3).toFixed(2)}s"/>`; s += `<circle cx="325" cy="80" r="46" fill="url(#sg)" opacity=".35"/><circle cx="325" cy="80" r="19" fill="#f4f1de"/><circle cx="334" cy="74" r="17" fill="${sky[0]}"/>`; }
+    else if (ph === 'dusk') s += `<circle cx="325" cy="132" r="70" fill="url(#sg)"/><circle cx="325" cy="132" r="26" fill="#ffd9a0"/>`;
+    else if (!rain) s += `<circle cx="325" cy="80" r="58" fill="url(#sg)" class="tw"/><circle cx="325" cy="80" r="24" fill="#ffe27a"/>`;
+    const cf = ph === 'night' ? 'rgba(200,210,235,.16)' : ph === 'dusk' ? 'rgba(255,214,190,.55)' : rain ? 'rgba(225,231,236,.92)' : 'rgba(255,255,255,.9)';
+    [[30, 62, 1, 95, 0], [70, 96, 0.7, 130, -50], [18, 40, 0.55, 160, -105], [48, 78, 0.85, 110, -70]].slice(0, rain ? 4 : 3).forEach((q) => { s += `<g class="cl" style="animation-duration:${q[3]}s;animation-delay:${q[4]}s"><g transform="translate(0,${q[0]}) scale(${q[2]})" fill="${cf}"><ellipse cx="60" cy="20" rx="46" ry="15"/><ellipse cx="42" cy="12" rx="22" ry="14"/><ellipse cx="74" cy="8" rx="26" ry="17"/><ellipse cx="100" cy="18" rx="24" ry="12"/></g></g>`; });
+    const P = this._pond(), fr = this._frost(), mo = new Date().getMonth() + 1, sea = mo === 12 || mo <= 2 ? 'wi' : mo <= 5 ? 'sp' : mo <= 8 ? 'su' : 'au';
+    const SH = { sp: ['#5f9a4e', '#86b85c'], su: ['#3f7d4e', '#356b42'], au: ['#7a7436', '#b0642b'], wi: ['#5e6552', '#787866'] }[sea];
+    const sh2 = ph !== 'day' ? [shore, shore] : fr ? ['#9aa39a', '#c9d0d2'] : rain ? [SH[0], SH[0]] : SH;
+    for (let k = 0; k < 13; k++) s += `<ellipse cx="${k * 50 + (k % 3) * 9}" cy="${141 - (k % 4)}" rx="${34 + (k % 3) * 8}" ry="${9 + (k % 5) * 2.2}" fill="${sh2[k % 3 === 1 ? 1 : 0]}"/>`;
+    const wy = 200 - 60 * P.L, wet = P.L > 0.02;
+    if (P.L < 1) {
+      const md = ph === 'night' ? ['#1d1812', '#0d0b09'] : ph === 'dusk' ? ['#5a4038', '#2e2430'] : fr ? ['#b4ada2', '#8b8377'] : rain ? ['#6e5640', '#463527'] : ['#8d6c49', '#5a4330'];
+      s += `<linearGradient id="md" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${md[0]}"/><stop offset="1" stop-color="${md[1]}"/></linearGradient><rect y="140" width="600" height="60" fill="url(#md)"/>`;
+      for (let k = 0; k < 9; k++) s += `<path d="M${(k * 71 + 20) % 600},${146 + (k * 13) % 50}q22,-2 44,1t40,-1" fill="none" stroke="rgba(0,0,0,.16)" stroke-width="1.2" stroke-linecap="round"/>`;
+      if (!wet) [[120, 178, 40, 5], [265, 189, 56, 6], [420, 175, 46, 5], [540, 191, 32, 4]].forEach((q) => { s += `<ellipse cx="${q[0]}" cy="${q[1]}" rx="${q[2]}" ry="${q[3]}" fill="${fr ? '#e4eef3' : 'url(#wa)'}" opacity=".9"/>`; });
+    }
+    if (wet) {
+      const hh = 200 - wy, sc = hh / 60, cy = f(wy + hh * 0.37);
+      s += `<rect y="${f(wy)}" width="600" height="${f(hh)}" fill="url(#wa)"/>`;
+      if (ph === 'night') s += `<ellipse cx="325" cy="${cy}" rx="5" ry="${f(15 * sc)}" fill="#f4f1de" opacity=".28" class="wv"/>`; else if (ph === 'dusk') s += `<ellipse cx="325" cy="${cy}" rx="22" ry="${f(20 * sc)}" fill="#ffd9a0" opacity=".4" class="wv"/>`; else if (!rain) s += `<ellipse cx="325" cy="${cy}" rx="9" ry="${f(17 * sc)}" fill="#fff3b8" opacity=".4" class="wv"/>`;
+      if (hh > 16) for (let k = 0; k < 7; k++) s += `<path d="M${40 + k * 84 + (k % 2) * 30},${f(wy + 10 + (k * 17) % Math.max(4, Math.round(hh - 18)))}q14,-3 28,0t28,0" fill="none" stroke="rgba(255,255,255,${ph === 'night' ? 0.14 : 0.34})" stroke-width="1.3" stroke-linecap="round" class="wv" style="animation-delay:${-k * 0.9}s"/>`;
+      if (P.st === 'drain') s += `<path d="M330,${f(wy - 1)}h64l-9,7h-46z" fill="#5b3a22"/><line x1="346" y1="${f(wy - 1)}" x2="354" y2="${f(wy - 17)}" stroke="#3a2a1c" stroke-width="1.5" stroke-linecap="round"/>${[0, 1, 2, 3, 4, 5].map((i) => `<circle cx="${250 + i * 13}" cy="${f(wy + 2)}" r="1.8" fill="#e8722c"/>`).join('')}`;
+    }
+    if (P.L >= 0.9 && sea !== 'wi' && !fr) s += `<g class="fj"><ellipse cx="440" cy="150" rx="9" ry="4" fill="#d98b3a"/><path d="M431,150l-7,-4v8z" fill="#c2732a"/><circle cx="445" cy="149" r=".9" fill="#2b2620"/></g>`;
+    if (P.L < 0.4 && ph !== 'night' && !rain) s += `<path d="M468,185l2,-18M474,185l-1,-18" fill="none" stroke="#5f666d" stroke-width="1.4" stroke-linecap="round"/><ellipse cx="473" cy="162" rx="11" ry="5.5" fill="#9aa3ab" transform="rotate(-18 473 162)"/><path d="M464,160q-6,-9 -1,-17" fill="none" stroke="#9aa3ab" stroke-width="3" stroke-linecap="round"/><circle cx="463" cy="142" r="3" fill="#c9cfd4"/><path d="M461,142l-9,1.5" stroke="#d9a441" stroke-width="1.6" stroke-linecap="round"/><path d="M465,140.5l6,-2" stroke="#2b2f33" stroke-width="1" stroke-linecap="round"/>`;
+    const RC = ph === 'night' ? ['#16301f', '#16301f', '#2a1c12'] : fr ? ['#a9a397', '#bdb7aa', '#6e5a44'] : { sp: ['#6aa24a', '#80bd58', '#6b4226'], su: ['#4f7a3a', '#5d8f45', '#6b4226'], au: ['#9c8446', '#b09a58', '#5e3b22'], wi: ['#8a7853', '#9b8862', '#7a5d3e'] }[sea];
+    const reed = (x, hh, k) => `<g class="rd" style="animation-delay:${-k * 0.7}s"><path d="M${x},200Q${x + 2},${200 - hh / 2} ${x},${200 - hh}" fill="none" stroke="${RC[0]}" stroke-width="2.2" stroke-linecap="round"/><ellipse cx="${x}" cy="${200 - hh + 3}" rx="2.8" ry="9" fill="${RC[2]}"/><path d="M${x},200q${k % 2 ? 12 : -12},-${hh * 0.45} ${k % 2 ? 20 : -20},-${hh * 0.62}" fill="none" stroke="${RC[1]}" stroke-width="1.8" stroke-linecap="round"/></g>`;
+    [[14, 70], [27, 92], [41, 62], [55, 80], [548, 66], [562, 90], [575, 72], [589, 84]].forEach((q, k) => { s += reed(q[0], q[1], k); });
+    if (rain) for (let k = 0; k < 44; k++) s += `<line x1="${(k * 67) % 620}" y1="0" x2="${(k * 67) % 620 - 3}" y2="11" stroke="rgba(235,243,250,.75)" stroke-width="1.2" stroke-linecap="round" class="rn" style="animation-delay:${(-(k * 0.13) % 0.8).toFixed(2)}s;animation-duration:${(0.7 + (k % 5) * 0.08).toFixed(2)}s"/>`;
+    const here = (typeof location !== 'undefined' && location.pathname) || '', ls = c.links || [], known = ls.some((l) => l.path === here);
+    const links = ls.map((l, i) => `<a class="l${here === l.path || (!known && i === 0) ? ' on' : ''}" href="${esc(l.path)}" data-p="${esc(l.path)}">${esc(l.label)}</a>`).join('');
+    return `<svg class="sky" viewBox="0 0 600 200" preserveAspectRatio="xMidYMax slice">${s}</svg><div class="hx"><div><div class="hn">${esc(c.title || '')}</div><div class="hl">${c.location ? esc(c.location) + ' · ' : ''}<span id="h-time"></span></div><div class="hu"><i id="h-dot" class="dot"></i><span id="h-upd"></span></div></div><div class="hr"><div class="ht" id="h-t"></div><div class="hf" id="h-f"></div></div></div><div class="ch" id="h-ch"></div>${links ? `<div class="nav">${links}</div>` : ''}`;
+  }
+
+  _table(v, unit, dec) {
+    const c = this._c, T = this._t, loc = this._loc;
+    if (c.variant === 'compass' || c.variant === 'rose') return '';
+    const cols = c.variant === 'rain' ? ['max', 'sum'] : (c.stats || ['max', 'min']);
+    const K = { max: 'mx', min: 'mn', mean: 'av', sum: 'sm' };
+    const n = (x) => (x == null || isNaN(x) ? '–' : Number(x).toLocaleString(loc, { minimumFractionDigits: dec, maximumFractionDigits: dec }));
+    let rows;
+    if (c.variant === 'rain') {
+      const s = this._stats, t = isNaN(v) ? 0 : v;
+      rows = s ? [['', n(v)], [n(Math.max(s.maxMonth, t)), n(s.month)], [n(Math.max(s.maxYear, t)), n(s.year)]] : [['', n(v)], ['–', '–'], ['–', '–']];
+    } else {
+      const s = this._stats || [];
+      rows = [0, 1, 2].map((i) => cols.map((k) => {
+        let x = s[i] ? s[i][k] : null;
+        if (!isNaN(v) && x != null) { if (k === 'max') x = Math.max(x, v); if (k === 'min') x = Math.min(x, v); }
+        return n(x);
+      }));
+    }
+    return `<table><tr><td>${unit}</td>${cols.map((k) => `<td><span class="p ${K[k]}">${T.stat[k]}</span></td>`).join('')}</tr>${rows.map((r, i) => `<tr><td class="r">${T.rows[i]}</td>${r.map((x) => `<td>${x}</td>`).join('')}</tr>`).join('')}</table>`;
+  }
+
+  _dial(v, val, unit) {
+    const c = this._c, min = c.min != null ? c.min : 0, max = c.max != null ? c.max : 100, cols = c.colors || BLUES;
+    const A = (t) => 135 + 270 * t, n = cols.length, gap = 0.008;
+    let s = '<circle cx="100" cy="100" r="94" fill="none" stroke="#cfd4d9" stroke-width="2"/>';
+    cols.forEach((col, i) => { s += `<path d="${arc(100, 100, 78, A(i / n + gap), A((i + 1) / n - gap))}" fill="none" stroke="${col}" stroke-width="15"/>`; });
+    (c.ticks || []).forEach((tk) => {
+      const tv = typeof tk === 'object' ? tk.v : tk, tl = typeof tk === 'object' ? tk.l : tk;
+      const [x, y] = pol(100, 100, 56, A((tv - min) / (max - min)));
+      s += `<text x="${f(x)}" y="${f(y + 3.5)}" text-anchor="middle" font-size="10" fill="#cfd4d9">${tl}</text>`;
+    });
+    const t = isNaN(v) ? 0 : clamp((v - min) / (max - min), 0, 1);
+    s += `<g transform="translate(100,100) rotate(${f(A(t))})"><polygon points="-16,0 -11,-4.5 0,-3 70,0 0,3 -11,4.5" fill="#3d8bd0"/></g>`;
+    s += '<circle cx="100" cy="100" r="9" fill="#14181c" stroke="#cfd4d9" stroke-width="2"/>';
+    s += `<text x="100" y="131" text-anchor="middle" font-size="10" fill="#cfd4d9">${unit}</text><text x="100" y="170" text-anchor="middle" font-size="20" fill="#e6e9ec">${val}</text>`;
+    return `<svg viewBox="0 0 200 200">${s}</svg>`;
+  }
+
+  _scale(cols, min, max) {
+    let s = '';
+    cols.forEach((col, i) => { s += `<rect x="62" y="${23 + i * 24}" width="11" height="22" fill="${col}"/>`; });
+    for (let i = 0; i <= 5; i++) s += `<text x="54" y="${25.5 + i * 24}" text-anchor="end" font-size="10" fill="#cfd4d9">${Math.round((max - i * (max - min) / 5) * 10) / 10}</text>`;
+    return s;
+  }
+
+  _thermo(v, val, unit) {
+    const c = this._c, min = c.min != null ? c.min : -40, max = c.max != null ? c.max : 60;
+    let s = this._scale(['#d42020', '#e96a6a', '#f5c4c4', '#c9f1fb', '#6fdcf5'], min, max);
+    if (!isNaN(v)) { const y = 142 - clamp((v - min) / (max - min), 0, 1) * 120; s += `<rect x="111" y="${f(y)}" width="18" height="${f(150 - y)}" fill="#d42020"/>`; }
+    s += '<circle cx="120" cy="157" r="19" fill="#d42020"/>';
+    s += '<path d="M106,32A14,14 0 0 1 134,32L134,137.5A24,24 0 1 1 106,137.5Z" fill="none" stroke="#cfd4d9" stroke-width="2"/>';
+    s += `<text x="92" y="181" text-anchor="end" font-size="21" fill="#e6e9ec">${val} ${unit}</text>`;
+    return `<svg viewBox="0 0 200 190">${s}</svg>`;
+  }
+
+  _rain(v, val, unit) {
+    const c = this._c, max = c.max != null ? c.max : 50, id = 'c' + Math.random().toString(36).slice(2);
+    const U = 'M96,18L96,128A14,14 0 0 0 110,142L168,142A14,14 0 0 0 182,128L182,18';
+    let s = this._scale(BLUES.slice().reverse(), 0, max);
+    if (!isNaN(v) && v > 0) { const y = 142 - clamp(v / max, 0.015, 1) * 120; s += `<clipPath id="${id}"><path d="${U}Z"/></clipPath><rect clip-path="url(#${id})" x="96" y="${f(y)}" width="86" height="${f(142 - y)}" fill="#3bb4d6"/>`; }
+    s += `<path d="${U}" fill="none" stroke="#cfd4d9" stroke-width="2"/>`;
+    s += `<text x="139" y="174" text-anchor="middle" font-size="21" fill="#e6e9ec">${val} ${unit}</text>`;
+    return `<svg viewBox="0 0 200 190">${s}</svg>`;
+  }
+
+  _compass(v) {
+    const T = this._t;
+    let s = '<circle cx="100" cy="100" r="94" fill="none" stroke="#cfd4d9" stroke-width="2"/>';
+    for (let i = 0; i < 8; i++) {
+      const a = i * 45 - 90;
+      s += `<path d="${arc(100, 100, 78, a - 21.5, a + 21.5)}" fill="none" stroke="#c5e6fb" stroke-width="15"/>`;
+      const [x, y] = pol(100, 100, 55, a);
+      s += `<text x="${f(x)}" y="${f(y + (i % 2 ? 3.5 : 5))}" text-anchor="middle" font-size="${i % 2 ? 9 : 14}" fill="#e6e9ec">${T.comp[i]}</text>`;
+    }
+    if (!isNaN(v)) s += `<g transform="translate(100,100) rotate(${f(v - 90)})"><polygon points="66,0 92,-9 92,9" fill="#3d8bd0"/></g>`;
+    s += `<text x="100" y="${isNaN(v) ? 107 : 104}" text-anchor="middle" font-size="22" fill="#e6e9ec">${isNaN(v) ? '–' : Math.round(v) + '°'}</text>`;
+    if (!isNaN(v)) s += `<text x="100" y="119" text-anchor="middle" font-size="10" fill="#cfd4d9">${T.dirs[Math.round(v / 22.5) % 16]}</text>`;
+    return `<svg viewBox="0 0 200 200">${s}</svg>`;
+  }
+
+  _rose(v, val, unit) {
+    const c = this._c, T = this._t, b = this._bins, h = this._roseH, speed = c.mode === 'speed', R0 = 20, R1 = 90;
+    let s = '<circle cx="100" cy="100" r="94" fill="none" stroke="#cfd4d9" stroke-width="1.5"/>';
+    [37.5, 55, 72.5].forEach((r) => { s += `<circle cx="100" cy="100" r="${r}" fill="none" stroke="#8b949c" stroke-width="0.8" stroke-dasharray="1 3"/>`; });
+    let info = b ? T.nodata : T.loading;
+    if (b && b.tot) {
+      const data = speed ? b.speed : b.share, mx = Math.max(...data), top = data.indexOf(mx);
+      if (mx > 0) {
+        data.forEach((p, i) => {
+          if (p <= 0) return;
+          const r = R0 + (R1 - R0) * p / mx, a0 = i * 22.5 - 90 - 10, a1 = i * 22.5 - 90 + 10;
+          const [x0, y0] = pol(100, 100, R0, a0), [x1, y1] = pol(100, 100, r, a0), [x2, y2] = pol(100, 100, r, a1), [x3, y3] = pol(100, 100, R0, a1);
+          s += `<path d="M${f(x0)},${f(y0)}L${f(x1)},${f(y1)}A${f(r)},${f(r)} 0 0 1 ${f(x2)},${f(y2)}L${f(x3)},${f(y3)}A${R0},${R0} 0 0 0 ${f(x0)},${f(y0)}Z" fill="#4db8ff"/>`;
+        });
+        info = speed ? T.strongest(T.dirs[top], mx.toFixed(1), unit) : T.main(T.dirs[top], Math.round(mx * 100));
+      } else info = T.calmAll;
+    }
+    s += `<circle cx="100" cy="100" r="${R0}" fill="#14181c" stroke="#cfd4d9" stroke-width="1"/>`;
+    if (b && b.tot && !speed && c.speed_entity) s += `<text x="100" y="94" text-anchor="middle" font-size="7" fill="#e6e9ec">%</text><text x="100" y="104" text-anchor="middle" font-size="10" font-weight="700" fill="#e6e9ec">${Math.round(b.calm * 100)}</text><text x="100" y="112" text-anchor="middle" font-size="6" fill="#e6e9ec">${T.calm}</text>`;
+    s += `<rect x="93" y="1" width="14" height="13" fill="#14181c"/><text x="100" y="12" text-anchor="middle" font-size="11" fill="#e6e9ec">${T.comp[0]}</text>`;
+    const btn = (hh, l) => `<button data-h="${hh}" class="${h === hh ? 'on' : ''}">${l}</button>`;
+    return `<div><svg viewBox="0 0 200 200">${s}</svg><div class="s">${info}</div><div class="b">${btn(24, T.hours[0])}${btn(72, T.hours[1])}${btn(168, T.hours[2])}</div></div>`;
+  }
+
+  _chartBody(unit) {
+    const c = this._c, T = this._t, loc = this._loc, ch = this._chart, series = this._series(), bar = c.mode === 'bar', dots = c.mode === 'dots';
+    const W = 600, H = 250, X0 = 48, X1 = 592, Y0 = 10, Y1 = 212, dec = c.decimals != null ? c.decimals : 1;
+    const msg = (m) => `<div class="k"></div><svg class="c" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="13" fill="#9aa3ab">${m}</text></svg>`;
+    if (!ch) return msg(T.loading);
+    const rows = series.map((s) => (ch.d[s.entity || c.entity] || []).filter((r) => r[s.stat] != null));
+    const all = rows.flatMap((r, i) => r.map((x) => x[series[i].stat]));
+    if (!all.length) return msg(T.notenough);
+    let lo = Math.min(...all), hi = Math.max(...all);
+    if (bar) lo = 0;
+    if (c.ymin != null) lo = c.ymin;
+    if (c.ymax != null) hi = c.ymax;
+    if (hi - lo < 1e-9) hi = lo + 1;
+    const raw = (hi - lo) / 6, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = dots ? 90 : [1, 2, 2.5, 5, 10].map((m) => m * mag).find((m) => m >= raw - 1e-12);
+    lo = Math.floor(lo / step + 1e-9) * step; hi = Math.ceil(hi / step - 1e-9) * step;
+    const sd = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9) + (step / mag === 2.5 ? 1 : 0));
+    const X = (t) => X0 + (X1 - X0) * (t - ch.t0) / (ch.t1 - ch.t0), Y = (v) => Y1 - (Y1 - Y0) * (v - lo) / (hi - lo);
+    let s = '';
+    for (let v = lo; v <= hi + step / 2; v += step) s += `<line x1="${X0}" y1="${f(Y(v))}" x2="${X1}" y2="${f(Y(v))}" stroke="#59616a" stroke-width="0.8" stroke-dasharray="2 3"/><text x="${X0 - 6}" y="${f(Y(v) + 3.5)}" text-anchor="end" font-size="10.5" fill="#e6e9ec">${v.toFixed(sd)}</text>`;
+    s += `<line x1="${X0}" y1="${Y0}" x2="${X0}" y2="${Y1}" stroke="#cfd4d9" stroke-width="1"/><line x1="${X0}" y1="${Y1}" x2="${X1}" y2="${Y1}" stroke="#cfd4d9" stroke-width="1"/>`;
+    const fmt = { day: (d) => String(d.getHours()).padStart(2, '0'), week: (d) => d.toLocaleDateString(loc, { weekday: 'short', day: 'numeric' }), month: (d) => d.toLocaleDateString(loc, { day: 'numeric', month: 'numeric' }), year: (d) => d.toLocaleDateString(loc, { month: 'short' }) }[ch.rk];
+    const ticks = [], d = new Date(ch.t0);
+    if (ch.rk === 'day') { d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1); for (; d.getTime() <= ch.t1; d.setHours(d.getHours() + 2)) ticks.push(new Date(d)); }
+    else if (ch.rk === 'year') { d.setDate(1); d.setHours(0, 0, 0, 0); d.setMonth(d.getMonth() + 1); for (; d.getTime() <= ch.t1; d.setMonth(d.getMonth() + 1)) ticks.push(new Date(d)); }
+    else { d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1); for (; d.getTime() <= ch.t1; d.setDate(d.getDate() + (ch.rk === 'week' ? 1 : 3))) ticks.push(new Date(d)); }
+    ticks.forEach((t) => { const x = X(t.getTime()); s += `<line x1="${f(x)}" y1="${Y1}" x2="${f(x)}" y2="${Y1 + 4}" stroke="#cfd4d9" stroke-width="1"/><text x="${f(x)}" y="${Y1 + 17}" text-anchor="middle" font-size="10.5" fill="#e6e9ec">${fmt(t)}</text>`; });
+    rows.forEach((r, i) => {
+      const st = series[i].stat, col = series[i].color;
+      if (bar) r.forEach((x) => { const a = Math.max(X0, X(x.start)), b = Math.min(X1, X(x.end)), y = Y(clamp(x[st], lo, hi)); if (b - a > 0.5 && x[st] > 0) s += `<rect x="${f(a + 0.5)}" y="${f(y)}" width="${f(Math.max(1, b - a - 1))}" height="${f(Y1 - y)}" fill="${col}"/>`; });
+      else if (dots) r.forEach((x) => { s += `<circle cx="${f(X((x.start + x.end) / 2))}" cy="${f(Y(x[st]))}" r="1.8" fill="${col}"/>`; });
+      else s += `<path d="${r.map((x, j) => `${j ? 'L' : 'M'}${f(clamp(X((x.start + x.end) / 2), X0, X1))},${f(Y(clamp(x[st], lo, hi)))}`).join('')}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round"/>`;
+    });
+    const agg = (r, st) => { const a = r.map((x) => x[st]), sum = a.reduce((p, q) => p + q, 0); return st === 'min' ? Math.min(...a) : st === 'max' ? Math.max(...a) : st === 'change' ? sum : sum / a.length; };
+    const pills = dots ? '' : rows.map((r, i) => (r.length ? `<span><span class="p" style="background:${series[i].color}">${series[i].label}</span>${agg(r, series[i].stat).toLocaleString(loc, { minimumFractionDigits: dec, maximumFractionDigits: dec })} ${unit}</span>` : '')).join('');
+    const legend = series.map((x) => `<span><i style="background:${x.color}"></i>${x.label}</span>`).join('');
+    return `<div class="k">${pills}</div><svg class="c" viewBox="0 0 ${W} ${H}">${s}</svg><div class="lg">${legend}</div>`;
+  }
+}
+
+/* ---------- Zambretti forecast card ---------- */
+const ZF_I18N = {
+  en: {
+    txt: { A: 'Settled fine', B: 'Fine weather', C: 'Becoming fine', D: 'Fine, becoming less settled', E: 'Fine, possible showers', F: 'Fairly fine, improving', G: 'Fairly fine, possible showers early', H: 'Fairly fine, showery later', I: 'Showery early, improving', J: 'Changeable, mending', K: 'Fairly fine, showers likely', L: 'Rather unsettled, clearing later', M: 'Unsettled, probably improving', N: 'Showery, bright intervals', O: 'Showery, becoming less settled', P: 'Changeable, some rain', Q: 'Unsettled, short fine intervals', R: 'Unsettled, rain later', S: 'Unsettled, rain at times', T: 'Very unsettled, finer at times', U: 'Rain at times, worse later', V: 'Rain at times, becoming very unsettled', W: 'Rain at frequent intervals', X: 'Very unsettled, rain', Y: 'Stormy, possibly improving', Z: 'Stormy, much rain' },
+    nopress: 'No pressure data', pressure: 'Pressure', calc: 'Trend is being calculated', up: '↗ rising', down: '↘ falling', flat: '→ steady', in3: 'in 3 h',
+    raining: (v) => `It is raining (${v} mm/h)`, fastfall: 'Pressure is falling very fast: storm possible', gusts: (v) => `Stormy gusts up to ${v} km/h`,
+    frost: 'Frost possible tonight', groundfrost: 'Ground frost possible tonight', fog: 'Fog or dew likely',
+    yday: (v, w) => `${v} °C ${w ? 'warmer' : 'colder'} than yesterday at this time`, t3: (w, v) => `Temperature ${w ? 'rising' : 'falling'} (${v} °C in 3 h)`, today: (v) => `${v} mm of rain so far today`,
+    title: 'Local forecast from the station · next 12 hours', multi: 'Multi-day forecast from the weather service',
+    note: 'The local forecast follows the Zambretti rule: station pressure and its change over three hours. It is a rough tendency for the next half day, not a multi-day forecast.',
+  },
+  de: {
+    txt: { A: 'Beständig schön', B: 'Schönes Wetter', C: 'Es wird schön', D: 'Schön, wird wechselhafter', E: 'Schön, Schauer möglich', F: 'Recht schön, Besserung', G: 'Recht schön, anfangs Schauer möglich', H: 'Recht schön, später Schauer', I: 'Anfangs Schauer, dann besser', J: 'Wechselhaft, Besserung', K: 'Recht schön, Schauer wahrscheinlich', L: 'Eher unbeständig, später Aufklaren', M: 'Unbeständig, wahrscheinlich Besserung', N: 'Schauer mit hellen Abschnitten', O: 'Schauer, wird unbeständiger', P: 'Wechselhaft, etwas Regen', Q: 'Unbeständig, kurze schöne Abschnitte', R: 'Unbeständig, später Regen', S: 'Unbeständig, zeitweise Regen', T: 'Sehr unbeständig, zeitweise freundlicher', U: 'Zeitweise Regen, später schlechter', V: 'Zeitweise Regen, wird sehr unbeständig', W: 'Häufig Regen', X: 'Sehr unbeständig, Regen', Y: 'Stürmisch, vielleicht Besserung', Z: 'Stürmisch, viel Regen' },
+    nopress: 'Keine Druckdaten', pressure: 'Luftdruck', calc: 'Tendenz wird noch berechnet', up: '↗ steigt', down: '↘ fällt', flat: '→ gleichbleibend', in3: 'in 3 h',
+    raining: (v) => `Es regnet gerade (${v} mm/h)`, fastfall: 'Der Luftdruck fällt sehr schnell: Sturm möglich', gusts: (v) => `Stürmische Böen bis ${v} km/h`,
+    frost: 'Frost in der Nacht möglich', groundfrost: 'Bodenfrost in der Nacht möglich', fog: 'Nebel oder Tau wahrscheinlich',
+    yday: (v, w) => `${v} °C ${w ? 'wärmer' : 'kälter'} als gestern um diese Zeit`, t3: (w, v) => `Temperatur ${w ? 'steigt' : 'fällt'} (${v} °C in 3 h)`, today: (v) => `Heute bisher ${v} mm Regen`,
+    title: 'Eigene Prognose aus der Station · nächste 12 Stunden', multi: 'Mehrtagesvorhersage vom Wetterdienst',
+    note: 'Die eigene Prognose folgt der Zambretti-Regel: Luftdruck an der Station und seine Änderung in drei Stunden. Sie ist eine grobe Tendenz für den halben Tag, keine Mehrtagesvorhersage.',
+  },
+};
+class ZambrettiForecastCard extends HTMLElement {
+  static getStubConfig() { return { pressure: '' }; }
+  setConfig(c) {
+    if (!c || !c.pressure) throw new Error('pressure is required');
+    this._c = c; this._sig = null;
+    if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+  }
+  getCardSize() { return this._c.compact ? 2 : 6; }
+  getGridOptions() { return { columns: 'full', rows: 'auto' }; }
+  disconnectedCallback() { if (this._unsub) { this._unsub(); this._unsub = null; } this._subbed = false; }
+
+  set hass(h) {
+    this._hass = h;
+    const c = this._c;
+    if (c.weather && !c.compact && !this._subbed && h.connection && h.connection.subscribeMessage) {
+      this._subbed = true;
+      h.connection.subscribeMessage((m) => { this._fc = m.forecast || []; this._render(); }, { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: c.weather }).then((u) => { this._unsub = u; }).catch(() => {});
+    }
+    const sig = ['pressure', 'temp', 'dewpoint', 'wind', 'gust', 'rain_rate', 'rain_today', 'wind_dir'].map((k) => (c[k] && h.states[c[k]] ? h.states[c[k]].state : '-')).join('|') + WSC_LANG(h);
+    if (sig !== this._sig) { this._sig = sig; this._render(); }
+    this._load();
+  }
+
+  async _load() {
+    if (this._busy || Date.now() - (this._t || 0) < 600000 || !this._hass.callWS) return;
+    this._busy = true;
+    try {
+      const end = new Date(), start = new Date(end.getTime() - 26 * 3600e3), c = this._c;
+      this._st = await this._hass.callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [c.pressure, c.temp].filter(Boolean), period: '5minute', types: ['mean'] });
+      this._t = Date.now();
+    } catch (e) { this._t = Date.now() - 540000; }
+    this._busy = false; this._render();
+  }
+
+  _render() {
+    const h = this._hass, c = this._c; if (!h) return;
+    const T = ZF_I18N[WSC_LANG(h)], loc = (h.locale && h.locale.language) || h.language || 'en';
+    const num = (k) => { const s = c[k] && h.states[c[k]]; const v = s ? Number(s.state) : NaN; return isNaN(v) ? null : v; };
+    const nf = (v, d) => (v == null ? '–' : v.toLocaleString(loc, { minimumFractionDigits: d, maximumFractionDigits: d }));
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+    const ago = (id, hrs) => { const rows = this._st && this._st[id]; if (!rows || !rows.length) return null; const t = Date.now() - hrs * 3600e3; let best = null, bd = 1e15; rows.forEach((r) => { const s = typeof r.start === 'number' ? r.start : new Date(r.start).getTime(), d = Math.abs(s - t); if (d < bd && r.mean != null) { bd = d; best = r.mean; } }); return bd < 45 * 60e3 ? best : null; };
+    const p = num('pressure'), t = num('temp'), dew = num('dewpoint'), wind = num('wind'), gust = num('gust'), rr = num('rain_rate'), rd = num('rain_today');
+    const p3 = ago(c.pressure, 3), t24 = c.temp ? ago(c.temp, 24) : null, t3 = c.temp ? ago(c.temp, 3) : null;
+    const dp = p != null && p3 != null ? p - p3 : null;
+    const trend = dp == null ? 0 : dp > 1.6 ? 1 : dp < -1.6 ? -1 : 0;
+    const SEQ = { '-1': 'ABDHORUVX', 0: 'ABEKNPSWXZ', 1: 'ABCFGIJLMQTYZ' };
+    let letter = null;
+    if (p != null) { const z = trend < 0 ? 127 - 0.12 * p : trend > 0 ? 185 - 0.16 * p : 144 - 0.13 * p, base = trend < 0 ? 1 : trend > 0 ? 20 : 10, seq = SEQ[trend]; letter = seq[Math.max(0, Math.min(seq.length - 1, Math.round(z) - base))]; }
+    const night = h.states['sun.sun'] && h.states['sun.sun'].state === 'below_horizon';
+    const cls = !letter ? 'na' : 'ABC'.includes(letter) ? 'sun' : 'DEFG'.includes(letter) ? 'part' : 'HIJKNO'.includes(letter) ? 'shower' : 'LMPQ'.includes(letter) ? 'cloud' : 'XYZ'.includes(letter) ? 'storm' : 'rain';
+    const ICON = { sun: night ? '🌙' : '☀️', part: night ? '☁️' : '🌤️', shower: '🌦️', cloud: '☁️', rain: '🌧️', storm: '⛈️', na: '❔' };
+    const icon = rr != null && rr > 0 ? '🌧️' : ICON[cls];
+    const tend = dp == null ? T.calc : `${trend > 0 ? T.up : trend < 0 ? T.down : T.flat} (${dp > 0 ? '+' : ''}${nf(dp, 1)} hPa ${T.in3})`;
+    const hints = [];
+    if (rr != null && rr > 0) hints.push(['🌧️', T.raining(nf(rr, 1))]);
+    if (dp != null && dp <= -6) hints.push(['⚠️', T.fastfall]);
+    if (gust != null && gust >= 50) hints.push(['💨', T.gusts(nf(gust, 0))]);
+    if (t != null && dew != null) {
+      if (dew <= 0 && t <= 4) hints.push(['❄️', T.frost]);
+      else if (dew <= 2 && t <= 6) hints.push(['❄️', T.groundfrost]);
+      if (t - dew < 1.5 && (wind == null || wind < 6)) hints.push(['🌫️', T.fog]);
+    }
+    if (t != null && t24 != null && Math.abs(t - t24) >= 1) hints.push([t > t24 ? '🔺' : '🔻', T.yday(nf(Math.abs(t - t24), 1), t > t24)]);
+    if (t != null && t3 != null && Math.abs(t - t3) >= 2) hints.push(['🌡️', T.t3(t > t3, (t > t3 ? '+' : '') + nf(t - t3, 1))]);
+    if (rd != null && rd > 0) hints.push(['☔', T.today(nf(rd, 1))]);
+    const css = `ha-card{display:block;padding:14px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px}
+.ic{font-size:44px;line-height:1}
+.tx{font-size:19px;font-weight:600;line-height:1.25}
+.sb{font-size:12.5px;color:var(--secondary-text-color,#666);margin-top:3px}
+.tp{margin-left:auto;font-size:28px;font-weight:300;white-space:nowrap}
+.hs{display:flex;flex-direction:column;gap:5px;margin-top:12px}
+.h{display:flex;gap:8px;font-size:14px;align-items:baseline}
+.cp{font-size:12px;color:var(--secondary-text-color,#666);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}
+.fc{display:grid;grid-template-columns:repeat(auto-fit,minmax(52px,1fr));gap:6px}
+.d{text-align:center;border:1px solid var(--divider-color,#ddd);border-radius:10px;padding:7px 2px}
+.d b{display:block;font-size:12px;font-weight:600}.d i{display:block;font-style:normal;font-size:22px;line-height:1.3}
+.d u{display:block;text-decoration:none;font-size:13px}.d s{text-decoration:none;color:var(--secondary-text-color,#666)}.d em{display:block;font-style:normal;font-size:11px;color:#3d8bd9;min-height:14px}
+.nt{font-size:11.5px;color:var(--secondary-text-color,#666);margin-top:10px}
+.cl{cursor:pointer}`;
+    const head = `<div class="row"><div class="ic">${icon}</div><div><div class="tx">${esc(letter ? T.txt[letter] : T.nopress)}</div><div class="sb">${c.compact ? '' : T.pressure + ' ' + nf(p, 1) + ' hPa · '}${esc(tend)}</div></div>${t != null ? `<div class="tp">${nf(t, 1)} °C</div>` : ''}</div>`;
+    if (c.compact) {
+      const one = hints.slice(0, 2).map((x) => `${x[0]} ${esc(x[1])}`).join(' · ');
+      this.shadowRoot.innerHTML = `<style>${css}</style><ha-card class="${c.navigation_path ? 'cl' : ''}">${head}${one ? `<div class="sb" style="margin-top:8px">${one}</div>` : ''}</ha-card>`;
+      if (c.navigation_path) this.shadowRoot.querySelector('ha-card').addEventListener('click', () => { history.pushState(null, '', c.navigation_path); window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true })); });
+      return;
+    }
+    const CI = { 'clear-night': '🌙', cloudy: '☁️', fog: '🌫️', hail: '🌨️', lightning: '🌩️', 'lightning-rainy': '⛈️', partlycloudy: '⛅', pouring: '🌧️', rainy: '🌦️', snowy: '❄️', 'snowy-rainy': '🌨️', sunny: '☀️', windy: '💨', 'windy-variant': '💨', exceptional: '⚠️' };
+    const days = (this._fc || []).slice(0, 6).map((d) => `<div class="d"><b>${new Date(d.datetime).toLocaleDateString(loc, { weekday: 'short' })}</b><i>${CI[d.condition] || '❔'}</i><u>${d.temperature != null ? Math.round(d.temperature) + '°' : '–'} <s>${d.templow != null ? Math.round(d.templow) + '°' : ''}</s></u><em>${d.precipitation ? nf(d.precipitation, 1) + ' mm' : ''}</em></div>`).join('');
+    this.shadowRoot.innerHTML = `<style>${css}</style><ha-card><div class="cp" style="margin-top:0">${esc(c.title || T.title)}</div>${head}<div class="hs">${hints.map((x) => `<div class="h"><span>${x[0]}</span><span>${esc(x[1])}</span></div>`).join('')}</div>${days ? `<div class="cp">${T.multi}</div><div class="fc">${days}</div>` : ''}${c.show_note === false ? '' : `<div class="nt">${T.note}</div>`}</ha-card>`;
+  }
+}
+
+if (!customElements.get('weather-station-card')) customElements.define('weather-station-card', WeatherStationCard);
+if (!customElements.get('zambretti-forecast-card')) customElements.define('zambretti-forecast-card', ZambrettiForecastCard);
+window.customCards = window.customCards || [];
+[['weather-station-card', 'Weather Station Card', 'Instruments and history charts for a personal weather station: dial, thermometer, rain gauge, compass, wind rose, chart and an animated header'],
+  ['zambretti-forecast-card', 'Zambretti Forecast Card', 'Short-term forecast from local air pressure and its 3-hour trend']]
+  .forEach(([type, name, description]) => { if (!window.customCards.some((c) => c.type === type)) window.customCards.push({ type, name, description}); });
+console.info(`%c WEATHER-STATION-CARD %c ${WSC_VERSION} `, 'color:#fff;background:#3d8bd0;font-weight:700', 'color:#3d8bd0;background:#fff');
