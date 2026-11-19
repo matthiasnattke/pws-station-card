@@ -2,11 +2,17 @@
    Variants: header, range, dial, thermo, rain, compass, rose, chart
    Also defines zambretti-forecast-card: a short-term forecast from local pressure and its 3-hour trend.
    MIT License – see LICENSE */
-const WSC_VERSION = '1.1.0';
+const WSC_VERSION = '1.1.1';
 const pol = (cx, cy, r, deg) => { const a = deg * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
 const f = (n) => Number(n).toFixed(2);
 const arc = (cx, cy, r, a0, a1) => { const [x0, y0] = pol(cx, cy, r, a0), [x1, y1] = pol(cx, cy, r, a1); return `M${f(x0)},${f(y0)}A${r},${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${f(x1)},${f(y1)}`; };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// Everything that comes from the card config or from entity attributes is escaped or validated before it reaches markup.
+const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+const num = (v, d) => { const n = Number(v); return v == null || v === '' || !isFinite(n) ? d : n; };
+const COLOR_RE = /^(#[0-9a-f]{3,8}|(rgb|hsl)a?\([\d\s.,%+-]+\)|var\(--[\w-]+\)|[a-z]{3,20})$/i;
+const col = (v, d) => (typeof v === 'string' && COLOR_RE.test(v.trim()) ? v.trim() : d);
+const safePath = (p) => (typeof p === 'string' && /^\/(?!\/)/.test(p) ? p : '');
 const WSC_LANG = (h) => { const l = ((h && ((h.locale && h.locale.language) || h.language)) || 'en').slice(0, 2); return l === 'de' ? 'de' : 'en'; };
 const WSC_I18N = {
   en: {
@@ -168,12 +174,12 @@ class WeatherStationCard extends HTMLElement {
   }
 
   _series() {
-    const c = this._c, T = this._t;
-    if (c.series) return c.series;
+    const c = this._c, T = this._t, DEF = ['#4a90e2', '#f2b632', '#e5533d', '#3bb4d6'];
+    if (Array.isArray(c.series)) return c.series.map((x, i) => ({ stat: ['min', 'mean', 'max', 'change'].includes(x && x.stat) ? x.stat : 'mean', entity: x && typeof x.entity === 'string' ? x.entity : undefined, label: String((x && x.label) || ''), color: col(x && x.color, DEF[i % DEF.length]) }));
     if (c.mode === 'bar') return [{ stat: 'change', label: T.sum, color: '#3bb4d6' }];
     if (c.mode === 'dots') return [{ stat: 'mean', label: T.avg, color: '#4a90e2' }];
-    const col = c.colors || ['#4a90e2', '#f2b632', '#e5533d'];
-    return [{ stat: 'min', label: T.min, color: col[0] }, { stat: 'mean', label: T.avg, color: col[1] }, { stat: 'max', label: T.max, color: col[2] }];
+    const cc = Array.isArray(c.colors) ? c.colors : [], co = (i, d) => col(cc[i], d);
+    return [{ stat: 'min', label: T.min, color: co(0, '#4a90e2') }, { stat: 'mean', label: T.avg, color: co(1, '#f2b632') }, { stat: 'max', label: T.max, color: co(2, '#e5533d') }];
   }
 
   async _loadChart() {
@@ -186,17 +192,16 @@ class WeatherStationCard extends HTMLElement {
   _render() {
     if (!this._hass || !this._c || !this.shadowRoot) return;
     const c = this._c, st = c.entity ? this._hass.states[c.entity] : null, T = this._t;
-    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
-    const unit = c.unit != null ? c.unit : (st && st.attributes.unit_of_measurement) || '';
+    const unit = esc(c.unit != null ? c.unit : (st && st.attributes.unit_of_measurement) || ''); // escaped once, used as-is below
     const name = c.name || (st && st.attributes.friendly_name) || '';
     let body;
     if (c.variant === 'header') body = this._header();
     else if (c.variant === 'range') { const rk = getRange(); body = `<div class="b">${Object.keys(RANGES).map((k) => `<button data-r="${k}" class="${k === rk ? 'on' : ''}">${T.range[k]}</button>`).join('')}</div>`; }
-    else if (c.variant === 'chart') body = `<div class="hd"><span class="t">${esc(name)}</span><span class="u">${esc(unit)}</span></div>${this._chartBody(unit)}`;
+    else if (c.variant === 'chart') body = `<div class="hd"><span class="t">${esc(name)}</span><span class="u">${unit}</span></div>${this._chartBody(unit)}`;
     else {
-      const v = st ? parseFloat(st.state) : NaN, dec = c.decimals != null ? c.decimals : 1, val = isNaN(v) ? '–' : v.toLocaleString(this._loc, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      const v = st ? parseFloat(st.state) : NaN, dec = clamp(Math.round(num(c.decimals, 1)), 0, 6), val = isNaN(v) ? '–' : v.toLocaleString(this._loc, { minimumFractionDigits: dec, maximumFractionDigits: dec });
       const showU = unit && !['compass', 'rose'].includes(c.variant);
-      body = `<div class="hd"><span class="t">${esc(name)}</span>${showU ? `<span class="u">${esc(unit)}</span>` : ''}</div><div class="g">${this['_' + c.variant](v, val, unit)}</div>${this._table(v, unit, dec)}`;
+      body = `<div class="hd"><span class="t">${esc(name)}</span>${showU ? `<span class="u">${unit}</span>` : ''}</div><div class="g">${this['_' + c.variant](v, val, unit)}</div>${this._table(v, unit, dec)}`;
     }
     const th = c.variant === 'header' ? '' : c.theme === 'dark' ? ' dk' : c.theme === 'light' ? ' lt' : '';
     this.shadowRoot.innerHTML = `<style>${VARS}${CSS}</style><ha-card class="${c.variant}${th}">${body}</ha-card>`;
@@ -257,7 +262,6 @@ class WeatherStationCard extends HTMLElement {
 
   _header() {
     const c = this._c, ph = this._phase(), rain = this._raining();
-    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
     const sky = rain && ph === 'day' ? ['#56677a', '#a9b6c3'] : ph === 'day' ? ['#2f7fd6', '#bfe1fb'] : ph === 'dusk' ? ['#27345f', '#f2a65a'] : ['#060a1c', '#1d2c52'];
     const wat = ph === 'night' ? ['#1a2c56', '#080f22'] : ph === 'dusk' ? ['#c98a5e', '#343a66'] : rain ? ['#8496a6', '#4f5f70'] : ['#86c5f0', '#2a6fb0'];
     const shore = ph === 'night' ? '#0a142b' : ph === 'dusk' ? '#232c4d' : rain ? '#3f5a4a' : '#3f7d4e';
@@ -291,7 +295,7 @@ class WeatherStationCard extends HTMLElement {
     const reed = (x, hh, k) => `<g class="rd" style="animation-delay:${-k * 0.7}s"><path d="M${x},200Q${x + 2},${200 - hh / 2} ${x},${200 - hh}" fill="none" stroke="${RC[0]}" stroke-width="2.2" stroke-linecap="round"/><ellipse cx="${x}" cy="${200 - hh + 3}" rx="2.8" ry="9" fill="${RC[2]}"/><path d="M${x},200q${k % 2 ? 12 : -12},-${hh * 0.45} ${k % 2 ? 20 : -20},-${hh * 0.62}" fill="none" stroke="${RC[1]}" stroke-width="1.8" stroke-linecap="round"/></g>`;
     [[14, 70], [27, 92], [41, 62], [55, 80], [548, 66], [562, 90], [575, 72], [589, 84]].forEach((q, k) => { s += reed(q[0], q[1], k); });
     if (rain) for (let k = 0; k < 44; k++) s += `<line x1="${(k * 67) % 620}" y1="0" x2="${(k * 67) % 620 - 3}" y2="11" stroke="rgba(235,243,250,.75)" stroke-width="1.2" stroke-linecap="round" class="rn" style="animation-delay:${(-(k * 0.13) % 0.8).toFixed(2)}s;animation-duration:${(0.7 + (k % 5) * 0.08).toFixed(2)}s"/>`;
-    const here = (typeof location !== 'undefined' && location.pathname) || '', ls = c.links || [], known = ls.some((l) => l.path === here);
+    const here = (typeof location !== 'undefined' && location.pathname) || '', ls = (Array.isArray(c.links) ? c.links : []).filter((l) => l && safePath(l.path)), known = ls.some((l) => l.path === here);
     const links = ls.map((l, i) => `<a class="l${here === l.path || (!known && i === 0) ? ' on' : ''}" href="${esc(l.path)}" data-p="${esc(l.path)}">${esc(l.label)}</a>`).join('');
     return `<svg class="sky" viewBox="0 0 600 200" preserveAspectRatio="xMidYMax slice">${s}</svg><div class="hx"><div><div class="hn">${esc(c.title || '')}</div><div class="hl">${c.location ? esc(c.location) + ' · ' : ''}<span id="h-time"></span></div><div class="hu"><i id="h-dot" class="dot"></i><span id="h-upd"></span></div></div><div class="hr"><div class="ht" id="h-t"></div><div class="hf" id="h-f"></div></div></div><div class="ch" id="h-ch"></div>${links ? `<div class="nav">${links}</div>` : ''}`;
   }
@@ -299,7 +303,7 @@ class WeatherStationCard extends HTMLElement {
   _table(v, unit, dec) {
     const c = this._c, T = this._t, loc = this._loc;
     if (c.variant === 'compass' || c.variant === 'rose') return '';
-    const rain = c.variant === 'rain', cols = rain ? ['dmax', 'sum'] : (c.stats || ['max', 'min']);
+    const rain = c.variant === 'rain', cols = rain ? ['dmax', 'sum'] : (Array.isArray(c.stats) ? c.stats.filter((k) => ['max', 'min', 'mean'].includes(k)) : ['max', 'min']);
     const n = (x) => (x == null || x === '' || isNaN(x) ? '–' : Number(x).toLocaleString(loc, { minimumFractionDigits: dec, maximumFractionDigits: dec }));
     let rows;
     if (rain) {
@@ -320,13 +324,13 @@ class WeatherStationCard extends HTMLElement {
 
   // Speed / pressure / any value: open 240° arc with a gradient fill, today's peak as a short mark.
   _dial(v, val, unit) {
-    const c = this._c, T = this._t, min = c.min != null ? c.min : 0, max = c.max != null ? c.max : 100, cols = c.colors || BLUES, id = 'g' + rid();
+    const c = this._c, T = this._t, min = num(c.min, 0), max = num(c.max, 100) === min ? min + 1 : num(c.max, 100), cols = (Array.isArray(c.colors) && c.colors.length ? c.colors : BLUES).map((x, i) => col(x, BLUES[i % BLUES.length])), id = 'g' + rid();
     const A = (t) => 150 + 240 * t, P = (x) => clamp((x - min) / (max - min), 0, 1), t = isNaN(v) ? 0 : P(v);
     let s = `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="22" y1="0" x2="178" y2="0">${cols.map((col, i) => `<stop offset="${cols.length > 1 ? (i / (cols.length - 1)).toFixed(3) : 0}" stop-color="${col}"/>`).join('')}</linearGradient></defs>`;
     s += `<path d="${arc(100, 100, 78, A(0), A(1))}" fill="none" stroke="var(--wh)" stroke-width="12" stroke-linecap="round"/>`;
     if (t > 0.004) s += `<path d="${arc(100, 100, 78, A(0), A(t))}" fill="none" stroke="url(#${id})" stroke-width="12" stroke-linecap="round"/>`;
-    (c.ticks || []).forEach((tk) => {
-      const tv = typeof tk === 'object' ? tk.v : tk, tl = typeof tk === 'object' ? tk.l : tk, a = A(P(tv));
+    (Array.isArray(c.ticks) ? c.ticks : []).forEach((tk) => {
+      const tv = num(tk && typeof tk === 'object' ? tk.v : tk, NaN), tl = esc(tk && typeof tk === 'object' ? (tk.l != null ? tk.l : tk.v) : tk); if (isNaN(tv)) return; const a = A(P(tv));
       const [x0, y0] = pol(100, 100, 88, a), [x1, y1] = pol(100, 100, 92, a), [x, y] = pol(100, 100, 100, a);
       s += `<line x1="${f(x0)}" y1="${f(y0)}" x2="${f(x1)}" y2="${f(y1)}" stroke="var(--w2)" stroke-width="1.2"/><text x="${f(x)}" y="${f(y + 3)}" text-anchor="middle" font-size="10" fill="var(--w2)">${tl}</text>`;
     });
@@ -337,14 +341,14 @@ class WeatherStationCard extends HTMLElement {
     }
     if (!isNaN(v)) { const [kx, ky] = pol(100, 100, 78, A(t)); s += `<circle cx="${f(kx)}" cy="${f(ky)}" r="8.5" fill="var(--wb)" stroke="var(--wt)" stroke-width="2.5"/>`; }
     const [ax, ay] = pol(100, 100, 78, A(0)), [bx] = pol(100, 100, 78, A(1));
-    if (!(c.ticks || []).length) s += `<text x="${f(ax)}" y="${f(ay + 24)}" text-anchor="middle" font-size="10" fill="var(--w2)">${min}</text><text x="${f(bx)}" y="${f(ay + 24)}" text-anchor="middle" font-size="10" fill="var(--w2)">${max}</text>`;
+    if (!(Array.isArray(c.ticks) ? c.ticks : []).length) s += `<text x="${f(ax)}" y="${f(ay + 24)}" text-anchor="middle" font-size="10" fill="var(--w2)">${min}</text><text x="${f(bx)}" y="${f(ay + 24)}" text-anchor="middle" font-size="10" fill="var(--w2)">${max}</text>`;
     s += `<text x="100" y="110" text-anchor="middle" font-size="38" font-weight="500" fill="var(--wt)">${val}</text><text x="100" y="132" text-anchor="middle" font-size="12" fill="var(--w2)">${unit}</text>`;
     return `<svg viewBox="-14 -14 228 184">${s}</svg>`;
   }
 
   // Temperature: big value over a colour band; today's range is lit, the dot is now.
   _thermo(v, val, unit) {
-    const c = this._c, min = c.min != null ? c.min : -20, max = c.max != null ? c.max : 40, id = 'g' + rid();
+    const c = this._c, min = num(c.min, -20), max = num(c.max, 40) === min ? min + 1 : num(c.max, 40), id = 'g' + rid();
     const X = (x) => 20 + 200 * clamp((x - min) / (max - min), 0, 1);
     const TS = [[-20, '#4f6ff0'], [-5, '#5fb6f2'], [5, '#5fd0c4'], [14, '#9bd46a'], [21, '#f2c94c'], [28, '#f2994a'], [36, '#e5533d'], [45, '#b8304a']];
     const x0 = 20 - 200 * (min - TS[0][0]) / (max - min), x1 = 20 + 200 * (TS[TS.length - 1][0] - min) / (max - min);
@@ -363,7 +367,7 @@ class WeatherStationCard extends HTMLElement {
 
   // Rain: a drop that fills up to `max` (default 50 mm), with a slow wave on top.
   _rain(v, val, unit) {
-    const c = this._c, max = c.max != null ? c.max : 50, id = 'c' + rid();
+    const c = this._c, max = num(c.max, 50) || 50, id = 'c' + rid();
     const D = 'M100,8C100,8 48,74 48,106A52,52 0 0 0 152,106C152,74 100,8 100,8Z';
     let s = `<clipPath id="${id}"><path d="${D}"/></clipPath><path d="${D}" fill="var(--wh)"/>`;
     if (!isNaN(v) && v > 0) {
@@ -422,7 +426,7 @@ class WeatherStationCard extends HTMLElement {
 
   _chartBody(unit) {
     const c = this._c, T = this._t, loc = this._loc, ch = this._chart, series = this._series(), bar = c.mode === 'bar', dots = c.mode === 'dots';
-    const W = 600, H = 240, X0 = 44, X1 = 596, Y0 = 8, Y1 = 212, dec = c.decimals != null ? c.decimals : 1;
+    const W = 600, H = 240, X0 = 44, X1 = 596, Y0 = 8, Y1 = 212, dec = clamp(Math.round(num(c.decimals, 1)), 0, 6);
     const msg = (m) => `<div class="k"></div><svg class="c" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="13" fill="var(--w2)">${m}</text></svg>`;
     if (!ch) return msg(T.loading);
     const rows = series.map((s) => (ch.d[s.entity || c.entity] || []).filter((r) => r[s.stat] != null));
@@ -430,8 +434,8 @@ class WeatherStationCard extends HTMLElement {
     if (!all.length) return msg(T.notenough);
     let lo = Math.min(...all), hi = Math.max(...all);
     if (bar) lo = 0;
-    if (c.ymin != null) lo = c.ymin;
-    if (c.ymax != null) hi = c.ymax;
+    lo = num(c.ymin, lo);
+    hi = num(c.ymax, hi);
     if (hi - lo < 1e-9) hi = lo + 1;
     const raw = (hi - lo) / 6, mag = Math.pow(10, Math.floor(Math.log10(raw)));
     const step = dots ? 90 : [1, 2, 2.5, 5, 10].map((m) => m * mag).find((m) => m >= raw - 1e-12);
@@ -454,7 +458,7 @@ class WeatherStationCard extends HTMLElement {
       else s += `<path d="${r.map((x, j) => `${j ? 'L' : 'M'}${f(clamp(X((x.start + x.end) / 2), X0, X1))},${f(Y(clamp(x[st], lo, hi)))}`).join('')}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     });
     const agg = (r, st) => { const a = r.map((x) => x[st]), sum = a.reduce((p, q) => p + q, 0); return st === 'min' ? Math.min(...a) : st === 'max' ? Math.max(...a) : st === 'change' ? sum : sum / a.length; };
-    const pills = rows.map((r, i) => `<span><i style="background:${series[i].color}"></i>${series[i].label}${dots || !r.length ? '' : ` <b>${agg(r, series[i].stat).toLocaleString(loc, { minimumFractionDigits: dec, maximumFractionDigits: dec })} ${unit}</b>`}</span>`).join('');
+    const pills = rows.map((r, i) => `<span><i style="background:${series[i].color}"></i>${esc(series[i].label)}${dots || !r.length ? '' : ` <b>${agg(r, series[i].stat).toLocaleString(loc, { minimumFractionDigits: dec, maximumFractionDigits: dec })} ${unit}</b>`}</span>`).join('');
     return `<div class="k">${pills}</div><svg class="c" viewBox="0 0 ${W} ${H}">${s}</svg>`;
   }
 }
@@ -519,7 +523,6 @@ class ZambrettiForecastCard extends HTMLElement {
     const T = ZF_I18N[WSC_LANG(h)], loc = (h.locale && h.locale.language) || h.language || 'en';
     const num = (k) => { const s = c[k] && h.states[c[k]]; const v = s ? Number(s.state) : NaN; return isNaN(v) ? null : v; };
     const nf = (v, d) => (v == null ? '–' : v.toLocaleString(loc, { minimumFractionDigits: d, maximumFractionDigits: d }));
-    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
     const ago = (id, hrs) => { const rows = this._st && this._st[id]; if (!rows || !rows.length) return null; const t = Date.now() - hrs * 3600e3; let best = null, bd = 1e15; rows.forEach((r) => { const s = typeof r.start === 'number' ? r.start : new Date(r.start).getTime(), d = Math.abs(s - t); if (d < bd && r.mean != null) { bd = d; best = r.mean; } }); return bd < 45 * 60e3 ? best : null; };
     const p = num('pressure'), t = num('temp'), dew = num('dewpoint'), wind = num('wind'), gust = num('gust'), rr = num('rain_rate'), rd = num('rain_today');
     const p3 = ago(c.pressure, 3), t24 = c.temp ? ago(c.temp, 24) : null, t3 = c.temp ? ago(c.temp, 3) : null;

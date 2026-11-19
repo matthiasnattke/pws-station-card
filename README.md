@@ -12,7 +12,9 @@ Dials and gauges show **daily, monthly and yearly** max / min / mean from Home A
 
 ## Installation
 
-**HACS** (recommended): HACS → ⋮ → *Custom repositories* → add this repository's URL with type *Dashboard* → install *Weather Station Card* → reload the browser.
+**HACS** (recommended): open HACS, search for **Weather Station Card**, install it and reload the browser.
+
+If it does not show up yet: HACS → ⋮ → *Custom repositories* → add this repository's URL with type *Dashboard* → install → reload the browser.
 
 **Manual:** copy `weather-station-card.js` to `config/www/` and add it as a dashboard resource (`/local/weather-station-card.js`, type *JavaScript module*).
 
@@ -118,7 +120,7 @@ The trend needs about three hours of pressure statistics after the first install
 
 ## Deutsch
 
-Wetterstations-Instrumente und Verlaufsgrafiken für Home Assistant: Kopfbereich mit Tageszeit, Wetter und Jahreszeit, Rundinstrumente mit Tages-, Monats- und Jahreswerten, Thermometer, Regenmesser, Windkompass, Windrose, Diagramme und eine eigene Kurzfrist-Prognose nach der Zambretti-Regel. Die Texte erscheinen automatisch auf Deutsch, wenn Home Assistant auf Deutsch eingestellt ist. Installation über HACS als *benutzerdefiniertes Repository* (Typ *Dashboard*).
+Wetterstations-Instrumente und Verlaufsgrafiken für Home Assistant: Kopfbereich mit Tageszeit, Wetter und Jahreszeit, Rundinstrumente mit Tages-, Monats- und Jahreswerten, Thermometer, Regenmesser, Windkompass, Windrose, Diagramme und eine eigene Kurzfrist-Prognose nach der Zambretti-Regel. Die Texte erscheinen automatisch auf Deutsch, wenn Home Assistant auf Deutsch eingestellt ist. Installation über HACS: nach *Weather Station Card* suchen und installieren (falls noch nicht gelistet: als *benutzerdefiniertes Repository*, Typ *Dashboard*).
 
 ## License
 
