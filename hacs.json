@@ -1,6 +1,6 @@
 {
-  "name": "Weather Station Card",
-  "filename": "weather-station-card.js",
+  "name": "PWS Station Card",
+  "filename": "pws-station-card.js",
   "render_readme": true,
   "homeassistant": "2025.1.0"
 }

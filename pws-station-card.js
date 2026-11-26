@@ -1,8 +1,8 @@
-/* Weather Station Card – instruments and history charts for a personal weather station (Ecowitt, Netatmo, …)
+/* PWS Station Card – instruments and history charts for a personal weather station (Ecowitt, Netatmo, …)
    Variants: header, range, dial, thermo, rain, compass, rose, chart
    Also defines zambretti-forecast-card: a short-term forecast from local pressure and its 3-hour trend.
    MIT License – see LICENSE */
-const WSC_VERSION = '1.1.1';
+const WSC_VERSION = '1.2.0';
 const pol = (cx, cy, r, deg) => { const a = deg * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
 const f = (n) => Number(n).toFixed(2);
 const arc = (cx, cy, r, a0, a1) => { const [x0, y0] = pol(cx, cy, r, a0), [x1, y1] = pol(cx, cy, r, a1); return `M${f(x0)},${f(y0)}A${r},${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${f(x1)},${f(y1)}`; };
@@ -47,7 +47,7 @@ const NOENTITY = ['header', 'range'];
 const BLUES = ['#9bd8ff', '#4aa3e8', '#1f5fa8'];
 const rid = () => Math.random().toString(36).slice(2, 9);
 const RANGES = { day: { h: 24, p: '5minute', bar: 'hour' }, week: { h: 168, p: 'hour', bar: 'day' }, month: { h: 720, p: 'day', bar: 'day' }, year: { h: 8760, p: 'day', bar: 'month' } };
-const getRange = () => { try { const r = localStorage.getItem('weather-station-card-range'); return RANGES[r] ? r : 'day'; } catch (e) { return 'day'; } };
+const getRange = () => { try { const r = localStorage.getItem('pws-station-card-range'); return RANGES[r] ? r : 'day'; } catch (e) { return 'day'; } };
 // Colours follow the Home Assistant theme; `theme: dark|light` forces a fixed palette.
 const VARS = 'ha-card{--wb:var(--ha-card-background,var(--card-background-color,#fff));--wt:var(--primary-text-color,#212121);--w2:var(--secondary-text-color,#727272);--wg:var(--divider-color,rgba(0,0,0,.12));--wh:var(--secondary-background-color,#eceff1);--wa:var(--primary-color,#03a9f4)}'
   + 'ha-card.dk{--wb:#1b1f24;--wt:#eef1f4;--w2:#9aa3ab;--wg:#343a41;--wh:#2a3037;background:#1b1f24}ha-card.lt{--wb:#fff;--wt:#22272c;--w2:#6b737b;--wg:#e3e6e9;--wh:#eef0f2;background:#fff}';
@@ -126,10 +126,10 @@ class WeatherStationCard extends HTMLElement {
     if (this._c.variant === 'header') this._tm = setInterval(() => this._hdrUpd(), 5000);
     if (this._c.variant === 'chart' || this._c.variant === 'range') {
       this._onRange = () => { if (this._c.variant === 'chart') { this._chart = null; this._last = Date.now(); this._load(); } this._render(); };
-      window.addEventListener('weather-station-card-range', this._onRange);
+      window.addEventListener('pws-station-card-range', this._onRange);
     }
   }
-  disconnectedCallback() { clearInterval(this._tm); if (this._onRange) window.removeEventListener('weather-station-card-range', this._onRange); }
+  disconnectedCallback() { clearInterval(this._tm); if (this._onRange) window.removeEventListener('pws-station-card-range', this._onRange); }
   getCardSize() { return NOENTITY.includes(this._c.variant) ? 2 : 6; }
   getGridOptions() {
     const v = this._c.variant;
@@ -155,7 +155,7 @@ class WeatherStationCard extends HTMLElement {
         const id = c.stat_entity || c.entity;
         this._stats = await Promise.all(['day', 'month', 'year'].map((p) => h.callWS({ type: 'recorder/statistic_during_period', statistic_id: id, calendar: { period: p }, types: ['max', 'min', 'mean'] })));
       }
-    } catch (e) { console.warn('weather-station-card', c.entity, e); }
+    } catch (e) { console.warn('pws-station-card', c.entity, e); }
     this._render();
   }
 
@@ -210,11 +210,11 @@ class WeatherStationCard extends HTMLElement {
     if (!NOENTITY.includes(c.variant)) card.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: c.entity }, bubbles: true, composed: true })));
     this.shadowRoot.querySelectorAll('button[data-h]').forEach((b) => b.addEventListener('click', (ev) => {
       ev.stopPropagation(); this._roseH = Number(b.dataset.h); this._bins = null; this._render();
-      this._loadRose().then(() => this._render()).catch((e) => console.warn('weather-station-card', e));
+      this._loadRose().then(() => this._render()).catch((e) => console.warn('pws-station-card', e));
     }));
     this.shadowRoot.querySelectorAll('button[data-r]').forEach((b) => b.addEventListener('click', () => {
-      try { localStorage.setItem('weather-station-card-range', b.dataset.r); } catch (e) { /* no storage: selection is not kept */ }
-      window.dispatchEvent(new Event('weather-station-card-range'));
+      try { localStorage.setItem('pws-station-card-range', b.dataset.r); } catch (e) { /* no storage: selection is not kept */ }
+      window.dispatchEvent(new Event('pws-station-card-range'));
     }));
     this.shadowRoot.querySelectorAll('a[data-p]').forEach((a) => a.addEventListener('click', (ev) => {
       ev.preventDefault(); history.pushState(null, '', a.dataset.p);
@@ -576,10 +576,10 @@ class ZambrettiForecastCard extends HTMLElement {
   }
 }
 
-if (!customElements.get('weather-station-card')) customElements.define('weather-station-card', WeatherStationCard);
+if (!customElements.get('pws-station-card')) customElements.define('pws-station-card', WeatherStationCard);
 if (!customElements.get('zambretti-forecast-card')) customElements.define('zambretti-forecast-card', ZambrettiForecastCard);
 window.customCards = window.customCards || [];
-[['weather-station-card', 'Weather Station Card', 'Instruments and history charts for a personal weather station: dial, thermometer, rain gauge, compass, wind rose, chart and an animated header'],
+[['pws-station-card', 'PWS Station Card', 'Instruments and history charts for a personal weather station: dial, thermometer, rain gauge, compass, wind rose, chart and an animated header'],
   ['zambretti-forecast-card', 'Zambretti Forecast Card', 'Short-term forecast from local air pressure and its 3-hour trend']]
   .forEach(([type, name, description]) => { if (!window.customCards.some((c) => c.type === type)) window.customCards.push({ type, name, description}); });
-console.info(`%c WEATHER-STATION-CARD %c ${WSC_VERSION} `, 'color:#fff;background:#3d8bd0;font-weight:700', 'color:#3d8bd0;background:#fff');
+console.info(`%c PWS-STATION-CARD %c ${WSC_VERSION} `, 'color:#fff;background:#3d8bd0;font-weight:700', 'color:#3d8bd0;background:#fff');

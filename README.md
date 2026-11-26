@@ -1,46 +1,49 @@
-# Weather Station Card
+# PWS Station Card
 
 <p align="center">
-  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=weather-station-card&category=plugin"><img src="https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant Marketplace"></a>
-  <a href="https://github.com/matthiasnattke/weather-station-card/releases/latest"><img src="https://img.shields.io/github/v/release/matthiasnattke/weather-station-card?style=for-the-badge&label=Release" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/matthiasnattke/weather-station-card?style=for-the-badge" alt="License"></a>
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=pws-station-card&category=plugin"><img src="https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant Marketplace"></a>
+  <a href="https://github.com/matthiasnattke/pws-station-card/releases/latest"><img src="https://img.shields.io/github/v/release/matthiasnattke/pws-station-card?style=for-the-badge&label=Release" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/matthiasnattke/pws-station-card?style=for-the-badge" alt="License"></a>
   <a href="https://buymeacoffee.com/couch"><img src="https://img.shields.io/badge/Buy%20me%20a-coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 </p>
 
 Instruments and history charts for a personal weather station in Home Assistant – Ecowitt, Netatmo, Davis, or any sensors you have.
 Two cards in one file:
 
-- **`weather-station-card`** – one card, eight variants: an animated `header`, a round `dial`, a `thermo`meter, a `rain` gauge, a wind `compass`, a wind `rose`, a history `chart` and a shared time `range` switch.
+- **`pws-station-card`** – one card, eight variants: an animated `header`, a round `dial`, a `thermo`meter, a `rain` gauge, a wind `compass`, a wind `rose`, a history `chart` and a shared time `range` switch.
 - **`zambretti-forecast-card`** – a short-term forecast computed from your own air pressure and its 3-hour trend (Zambretti rule), plus hints such as frost, fog or a fast pressure drop, and optionally the multi-day forecast of a `weather` entity.
 
 ![Preview](images/preview.png)
 
 Dials and gauges show **daily, monthly and yearly** max / min / mean from Home Assistant's long-term statistics. The header follows the sun (day, dusk, night), rain, frost and the seasons. UI texts are available in **English and German** and follow the user's language.
 
+> [!NOTE]
+> Up to version 1.1.1 this card was called **Weather Station Card** (`custom:weather-station-card`). It was renamed so it can be used next to the card of the same name in the default catalog. If you used it before, change `type: custom:weather-station-card` to `type: custom:pws-station-card` in your dashboards.
+
 ## Installation
 
 ### 1. Home Assistant Marketplace (recommended)
 
-1. Click the button below, or open **Settings > Marketplace** and search for **Weather Station Card**.
+1. Click the button below, or open **Settings > Marketplace** and search for **PWS Station Card**.
 2. Click **Download** and confirm.
 3. Reload the browser (in the app: pull down to refresh).
-4. Edit a dashboard → **Add card** → search for **Weather Station Card**. It starts with an example config.
+4. Edit a dashboard → **Add card** → search for **PWS Station Card**. It starts with an example config.
 
-<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=weather-station-card&category=plugin"><img src="https://img.shields.io/badge/Open%20Marketplace%20repository%20on-My-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Open this repository in the Home Assistant Marketplace"></a>
+<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=pws-station-card&category=plugin"><img src="https://img.shields.io/badge/Open%20Marketplace%20repository%20on-My-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Open this repository in the Home Assistant Marketplace"></a>
 
 > [!TIP]
 > Updates then appear under **Settings > Updates**, next to the Home Assistant updates.
 
 ### 2. Manual installation
 
-1. Download [`weather-station-card.js`](https://github.com/matthiasnattke/weather-station-card/raw/main/weather-station-card.js).
+1. Download [`pws-station-card.js`](https://github.com/matthiasnattke/pws-station-card/raw/main/pws-station-card.js).
 2. Copy it to `<config>/www/`.
-3. **Settings > Dashboards** → ⋮ → **Resources** → add `/local/weather-station-card.js` as *JavaScript module*.
+3. **Settings > Dashboards** → ⋮ → **Resources** → add `/local/pws-station-card.js` as *JavaScript module*.
 4. Reload the browser.
 
 The sensors need a `state_class` (e.g. `measurement`) so that long-term statistics exist.
 
-## weather-station-card
+## pws-station-card
 
 | Option | Variants | Description |
 |---|---|---|
@@ -80,7 +83,7 @@ pond:
 ### Example
 
 ```yaml
-type: custom:weather-station-card
+type: custom:pws-station-card
 variant: header
 title: My station
 location: Garden
@@ -95,7 +98,7 @@ pressure: sensor.station_relative_pressure
 ```
 
 ```yaml
-type: custom:weather-station-card
+type: custom:pws-station-card
 variant: dial
 entity: sensor.station_uv_index
 name: UV index
@@ -108,7 +111,7 @@ stats: [max]
 ```
 
 ```yaml
-type: custom:weather-station-card
+type: custom:pws-station-card
 variant: rain
 entity: sensor.station_daily_rain
 stat_entity: sensor.station_total_rain
@@ -116,7 +119,7 @@ max: 50
 ```
 
 ```yaml
-type: custom:weather-station-card
+type: custom:pws-station-card
 variant: chart
 entity: sensor.station_wind_speed
 name: Wind
@@ -140,7 +143,7 @@ The trend needs about three hours of pressure statistics after the first install
 
 ## Deutsch
 
-Wetterstations-Instrumente und Verlaufsgrafiken für Home Assistant: Kopfbereich mit Tageszeit, Wetter und Jahreszeit, Rundinstrumente mit Tages-, Monats- und Jahreswerten, Thermometer, Regenmesser, Windkompass, Windrose, Diagramme und eine eigene Kurzfrist-Prognose nach der Zambretti-Regel. Die Texte erscheinen automatisch auf Deutsch, wenn Home Assistant auf Deutsch eingestellt ist. Installation über HACS: nach *Weather Station Card* suchen und installieren (falls noch nicht gelistet: als *benutzerdefiniertes Repository*, Typ *Dashboard*).
+Wetterstations-Instrumente und Verlaufsgrafiken für Home Assistant: Kopfbereich mit Tageszeit, Wetter und Jahreszeit, Rundinstrumente mit Tages-, Monats- und Jahreswerten, Thermometer, Regenmesser, Windkompass, Windrose, Diagramme und eine eigene Kurzfrist-Prognose nach der Zambretti-Regel. Die Texte erscheinen automatisch auf Deutsch, wenn Home Assistant auf Deutsch eingestellt ist. Installation über HACS: nach *PWS Station Card* suchen und installieren (falls noch nicht gelistet: als *benutzerdefiniertes Repository*, Typ *Dashboard*).
 
 ## ☕ Support this project
 
