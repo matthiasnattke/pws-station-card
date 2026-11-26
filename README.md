@@ -1,7 +1,7 @@
 # PWS Station Card
 
 <p align="center">
-  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=pws-station-card&category=plugin"><img src="https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant Marketplace"></a>
+  <a href="https://my.home-assistant.io/redirect/marketplace_repository/?owner=matthiasnattke&repository=pws-station-card&category=plugin"><img src="https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant Marketplace"></a>
   <a href="https://github.com/matthiasnattke/pws-station-card/releases/latest"><img src="https://img.shields.io/github/v/release/matthiasnattke/pws-station-card?style=for-the-badge&label=Release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/matthiasnattke/pws-station-card?style=for-the-badge" alt="License"></a>
   <a href="https://buymeacoffee.com/couch"><img src="https://img.shields.io/badge/Buy%20me%20a-coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
@@ -29,7 +29,7 @@ Dials and gauges show **daily, monthly and yearly** max / min / mean from Home A
 3. Reload the browser (in the app: pull down to refresh).
 4. Edit a dashboard → **Add card** → search for **PWS Station Card**. It starts with an example config.
 
-<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=pws-station-card&category=plugin"><img src="https://img.shields.io/badge/Open%20Marketplace%20repository%20on-My-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Open this repository in the Home Assistant Marketplace"></a>
+<a href="https://my.home-assistant.io/redirect/marketplace_repository/?owner=matthiasnattke&repository=pws-station-card&category=plugin"><img src="https://my.home-assistant.io/badges/marketplace_repository.svg" alt="Open your Home Assistant instance and open this repository in the Marketplace."></a>
 
 > [!TIP]
 > Updates then appear under **Settings > Updates**, next to the Home Assistant updates.
