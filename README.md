@@ -1,5 +1,12 @@
 # Weather Station Card
 
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=weather-station-card&category=plugin"><img src="https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Home Assistant Marketplace"></a>
+  <a href="https://github.com/matthiasnattke/weather-station-card/releases/latest"><img src="https://img.shields.io/github/v/release/matthiasnattke/weather-station-card?style=for-the-badge&label=Release" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/matthiasnattke/weather-station-card?style=for-the-badge" alt="License"></a>
+  <a href="https://buymeacoffee.com/couch"><img src="https://img.shields.io/badge/Buy%20me%20a-coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+</p>
+
 Instruments and history charts for a personal weather station in Home Assistant – Ecowitt, Netatmo, Davis, or any sensors you have.
 Two cards in one file:
 
@@ -12,11 +19,24 @@ Dials and gauges show **daily, monthly and yearly** max / min / mean from Home A
 
 ## Installation
 
-**HACS** (recommended): open HACS, search for **Weather Station Card**, install it and reload the browser.
+### 1. Home Assistant Marketplace (recommended)
 
-If it does not show up yet: HACS → ⋮ → *Custom repositories* → add this repository's URL with type *Dashboard* → install → reload the browser.
+1. Click the button below, or open **Settings > Marketplace** and search for **Weather Station Card**.
+2. Click **Download** and confirm.
+3. Reload the browser (in the app: pull down to refresh).
+4. Edit a dashboard → **Add card** → search for **Weather Station Card**. It starts with an example config.
 
-**Manual:** copy `weather-station-card.js` to `config/www/` and add it as a dashboard resource (`/local/weather-station-card.js`, type *JavaScript module*).
+<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=matthiasnattke&repository=weather-station-card&category=plugin"><img src="https://img.shields.io/badge/Open%20Marketplace%20repository%20on-My-41BDF5?style=for-the-badge&logo=homeassistant&logoColor=white" alt="Open this repository in the Home Assistant Marketplace"></a>
+
+> [!TIP]
+> Updates then appear under **Settings > Updates**, next to the Home Assistant updates.
+
+### 2. Manual installation
+
+1. Download `weather-station-card.js` from the latest [release](https://github.com/matthiasnattke/weather-station-card/releases/latest).
+2. Copy it to `<config>/www/`.
+3. **Settings > Dashboards** → ⋮ → **Resources** → add `/local/weather-station-card.js` as *JavaScript module*.
+4. Reload the browser.
 
 The sensors need a `state_class` (e.g. `measurement`) so that long-term statistics exist.
 
@@ -121,6 +141,12 @@ The trend needs about three hours of pressure statistics after the first install
 ## Deutsch
 
 Wetterstations-Instrumente und Verlaufsgrafiken für Home Assistant: Kopfbereich mit Tageszeit, Wetter und Jahreszeit, Rundinstrumente mit Tages-, Monats- und Jahreswerten, Thermometer, Regenmesser, Windkompass, Windrose, Diagramme und eine eigene Kurzfrist-Prognose nach der Zambretti-Regel. Die Texte erscheinen automatisch auf Deutsch, wenn Home Assistant auf Deutsch eingestellt ist. Installation über HACS: nach *Weather Station Card* suchen und installieren (falls noch nicht gelistet: als *benutzerdefiniertes Repository*, Typ *Dashboard*).
+
+## ☕ Support this project
+
+I build these cards in my free time. If one of them makes your dashboard nicer, you are welcome to buy me a coffee – completely voluntary, and thank you!
+
+<a href="https://buymeacoffee.com/couch"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 
 ## License
 
