@@ -33,7 +33,7 @@ Dials and gauges show **daily, monthly and yearly** max / min / mean from Home A
 
 ### 2. Manual installation
 
-1. Download `weather-station-card.js` from the latest [release](https://github.com/matthiasnattke/weather-station-card/releases/latest).
+1. Download [`weather-station-card.js`](https://github.com/matthiasnattke/weather-station-card/raw/main/weather-station-card.js).
 2. Copy it to `<config>/www/`.
 3. **Settings > Dashboards** → ⋮ → **Resources** → add `/local/weather-station-card.js` as *JavaScript module*.
 4. Reload the browser.
